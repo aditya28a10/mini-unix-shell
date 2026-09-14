@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+obj/
+*.o
+*.d
+*.a
+*.so
+*.dylib
+
+# Core dumps
+core
+core.*
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS artifacts
+.DS_Store
+Thumbs.db
