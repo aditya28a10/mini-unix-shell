@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string_view>
 #include "version.hpp"
+#include "shell.hpp"
 
 namespace {
 
@@ -11,9 +12,9 @@ void print_help(std::string_view program_name) {
               << "Options:\n"
               << "  -h, --help       Display this help message and exit\n"
               << "  -v, --version    Display version information and exit\n\n"
-              << "Phase 0 Status:\n"
-              << "  Project scaffold and build system verified.\n"
-              << "  Interactive REPL and process execution will be implemented in Phase 1.\n";
+              << "Interactive Usage:\n"
+              << "  Run without options to enter the interactive shell prompt.\n"
+              << "  Supports external command execution via fork(), execvp(), and waitpid().\n";
 }
 
 void print_version() {
@@ -39,7 +40,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::cout << minishell::SHELL_NAME << " (" << minishell::SHELL_VERSION << ")\n";
-    std::cout << "Phase 0 environment initialized successfully. Ready for Phase 1.\n";
-    return 0;
+    minishell::Shell shell;
+    return shell.run();
 }

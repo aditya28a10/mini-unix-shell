@@ -16,19 +16,19 @@ The goal of **`mini-shell`** is not to wrap high-level abstractions or rely on c
 
 The project is developed incrementally across distinct phases:
 
-| Phase | Milestone | Core Concepts / APIs |
-| :--- | :--- | :--- |
-| **Phase 0** | **Project Setup & Scaffolding** *(Current)* | Toolchain, `Makefile`, strict compilation, unit test harness |
-| **Phase 1** | Basic Command Execution | `fork()`, `execvp()`, `waitpid()`, process lifecycle |
-| **Phase 2** | Built-in Commands | In-process execution (`cd`, `pwd`, `exit`, `help`) |
-| **Phase 3** | I/O Redirection | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr |
-| **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing |
-| **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup |
-| **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention |
-| **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGTSTP`, `SIGCHLD`, signal masks |
-| **Phase 8** | Job Control | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` |
-| **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting |
-| **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage |
+| Phase | Milestone | Core Concepts / APIs | Status |
+| :--- | :--- | :--- | :--- |
+| **Phase 0** | Project Setup & Scaffolding | Toolchain, `Makefile`, strict compilation, unit test harness | Completed |
+| **Phase 1** | **Basic Command Execution** | `fork()`, `execvp()`, `waitpid()`, REPL, exit statuses | **Completed** |
+| **Phase 2** | Built-in Commands | In-process execution (`cd`, `pwd`, `exit`, `help`) | Planned |
+| **Phase 3** | I/O Redirection | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | Planned |
+| **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | Planned |
+| **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | Planned |
+| **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | Planned |
+| **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGTSTP`, `SIGCHLD`, signal masks | Planned |
+| **Phase 8** | Job Control | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | Planned |
+| **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting | Planned |
+| **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage | Planned |
 
 ---
 
@@ -36,14 +36,22 @@ The project is developed incrementally across distinct phases:
 
 ```text
 mini-unix-shell/
-├── include/           # Header files and declarations
+├── include/           # Header files and interface declarations
+│   ├── command.hpp    # Command data representation
+│   ├── executor.hpp   # Process execution layer (fork, exec, waitpid)
+│   ├── parser.hpp     # Whitespace-based tokenizer interface
+│   ├── shell.hpp      # REPL coordinator and prompt management
 │   └── version.hpp    # Version and build metadata
 ├── src/               # Implementation source files
-│   └── main.cpp       # Shell entrypoint
+│   ├── executor.cpp   # POSIX fork/exec/waitpid implementation
+│   ├── main.cpp       # CLI entrypoint and options handling
+│   ├── parser.cpp     # Whitespace tokenizer implementation
+│   └── shell.cpp      # REPL loop implementation
 ├── tests/             # Automated test scripts and harnesses
-│   └── run_tests.sh   # Phase test runner
+│   └── run_tests.sh   # Phase regression and compliance test runner
 ├── docs/              # In-depth architectural and phase documentation
-│   └── phase-00-setup.md
+│   ├── phase-00-setup.md
+│   └── phase-01-process-execution.md
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system
@@ -66,7 +74,7 @@ mini-unix-shell/
 # Build the mini-shell binary
 make
 
-# Run the executable
+# Run the interactive shell
 make run
 
 # Run the automated test suite
@@ -78,6 +86,28 @@ make clean
 # View all available targets
 make help
 ```
+
+---
+
+## Usage Examples
+
+Launch the shell interactively:
+
+```text
+$ ./bin/mini-shell
+mini-shell$ ls
+Makefile     README.md    bin          include      src
+LEARNING.md  docs         obj          tests
+mini-shell$ pwd
+/Users/adityapal/Projects/mini-unix-shell
+mini-shell$ echo hello from mini-shell
+hello from mini-shell
+mini-shell$ nonexistent_command
+mini-shell: nonexistent_command: No such file or directory
+mini-shell$
+```
+
+To exit the shell, press `Ctrl+D` (EOF).
 
 ---
 
@@ -95,6 +125,6 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 0 (Project Setup & Toolchain Scaffolding).
-- **Status**: Build environment, directory structure, compilation targets, and automated test harness are operational.
-- **Next Step**: Phase 1 — implementing the interactive REPL, token parsing, and explicit `fork()` / `execvp()` / `waitpid()` process execution.
+- **Current Phase**: Phase 1 (Basic Command Execution).
+- **Implemented**: Interactive REPL (`mini-shell$ `), whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit code propagation, EOF handling, and non-interactive input detection.
+- **Next Step**: Phase 2 — Built-in commands (`cd`, `pwd`, `exit`, `help`), executing in-process without forking.
