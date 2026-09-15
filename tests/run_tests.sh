@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# Test harness for Mini Unix Shell - Phase 1
+# Test harness for Mini Unix Shell - Phase 2
 
 set -euo pipefail
 
-# ANSI color codes for readable output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 1)          ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 2)         ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
-# Navigate to project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
@@ -50,15 +48,13 @@ assert_failure() {
 
 # --- Phase 0 Regression Tests ---
 
-test_binary_exists() {
-    [[ -x "./bin/mini-shell" ]]
-}
+test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.1.0-phase1"* ]] && \
-    [[ "$v2" == *"mini-shell version 0.1.0-phase1"* ]]
+    [[ "$v1" == *"mini-shell version 0.2.0-phase2"* ]] && \
+    [[ "$v2" == *"mini-shell version 0.2.0-phase2"* ]]
 }
 
 test_help_flag() {
@@ -67,9 +63,7 @@ test_help_flag() {
     [[ "$h1" == *"Usage:"* ]] && [[ "$h2" == *"Usage:"* ]]
 }
 
-test_invalid_flag() {
-    ./bin/mini-shell --invalid-flag
-}
+test_invalid_flag() { ./bin/mini-shell --invalid-flag; }
 
 test_make_clean() {
     make clean >/dev/null
@@ -109,10 +103,7 @@ test_sequential_commands() {
     [[ "$output" == "$expected" ]]
 }
 
-test_eof_termination() {
-    # Empty input should terminate cleanly with code 0
-    printf "" | ./bin/mini-shell
-}
+test_eof_termination() { printf "" | ./bin/mini-shell; }
 
 test_nonexistent_command_error() {
     local err_output
@@ -121,11 +112,77 @@ test_nonexistent_command_error() {
 }
 
 test_command_failure_exit_status() {
-    # Child failure status should propagate to shell exit code
     echo "ls /path/that/does/not/exist_12345" | ./bin/mini-shell
 }
 
-# Execute tests
+# --- Phase 2 Built-in Tests ---
+
+test_pwd_builtin() {
+    output=$(printf "pwd\n" | ./bin/mini-shell)
+    [[ "$output" == "$PROJECT_ROOT" ]]
+}
+
+test_cd_changes_directory() {
+    output=$(printf "cd $PROJECT_ROOT/docs\npwd\n" | ./bin/mini-shell)
+    [[ "$output" == "$PROJECT_ROOT/docs" ]]
+}
+
+test_cd_parent_directory() {
+    output=$(printf "cd $PROJECT_ROOT/docs\ncd ..\npwd\n" | ./bin/mini-shell)
+    [[ "$output" == "$PROJECT_ROOT" ]]
+}
+
+test_cd_home() {
+    output=$(printf "cd\npwd\n" | ./bin/mini-shell)
+    [[ "$output" == "$HOME" ]]
+}
+
+test_cd_nonexistent_directory() {
+    local output
+    output=$(printf "cd /nonexistent_directory_xyz\nexit\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: cd:"* ]]
+}
+
+test_cd_too_many_arguments() {
+    local output
+    output=$(printf "cd /tmp /\nexit\n" | ./bin/mini-shell 2>&1)
+    [[ "$output" == *"mini-shell: cd: too many arguments"* ]]
+}
+
+test_help_builtin() {
+    output=$(printf "help\n" | ./bin/mini-shell)
+    [[ "$output" == *"cd [dir]"* ]] && \
+    [[ "$output" == *"pwd"* ]] && \
+    [[ "$output" == *"exit [n]"* ]] && \
+    [[ "$output" == *"help"* ]]
+}
+
+test_exit_zero() {
+    local status=0
+    printf "exit\n" | ./bin/mini-shell >/dev/null || status=$?
+    [[ $status -eq 0 ]]
+}
+
+test_exit_custom_status() {
+    local status=0
+    printf "exit 42\n" | ./bin/mini-shell >/dev/null || status=$?
+    [[ $status -eq 42 ]]
+}
+
+test_exit_too_many_arguments() {
+    local output
+    output=$(printf "exit 1 2\necho still-running\nexit\n" | ./bin/mini-shell 2>&1)
+    [[ "$output" == *"mini-shell: exit: too many arguments"* ]] && \
+    [[ "$output" == *"still-running"* ]]
+}
+
+test_cd_persists_for_external_command() {
+    output=$(printf "cd $PROJECT_ROOT/docs\n/bin/pwd\n" | ./bin/mini-shell)
+    [[ "$output" == "$PROJECT_ROOT/docs" ]]
+}
+
+# --- Execute tests ---
+
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
 assert_success "1. Binary exists and is executable" test_binary_exists
 assert_success "2. Version flags (--version, -v) work" test_version_flag
@@ -143,6 +200,19 @@ assert_success "11. Execute sequential commands in order" test_sequential_comman
 assert_success "12. Clean termination on EOF (Ctrl+D)" test_eof_termination
 assert_success "13. Report error when command does not exist" test_nonexistent_command_error
 assert_failure "14. Propagate non-zero exit status from failing command" test_command_failure_exit_status
+
+echo -e "${YELLOW}--- Phase 2 Built-in Commands ---${NC}"
+assert_success "15. pwd built-in reports current working directory" test_pwd_builtin
+assert_success "16. cd changes directory for subsequent commands" test_cd_changes_directory
+assert_success "17. cd .. changes to parent directory" test_cd_parent_directory
+assert_success "18. cd with no arguments uses HOME" test_cd_home
+assert_success "19. cd reports error for nonexistent directory" test_cd_nonexistent_directory
+assert_success "20. cd rejects too many arguments" test_cd_too_many_arguments
+assert_success "21. help lists all four built-ins" test_help_builtin
+assert_success "22. exit terminates with status 0" test_exit_zero
+assert_success "23. exit accepts a custom numeric status" test_exit_custom_status
+assert_success "24. exit rejects too many arguments without terminating" test_exit_too_many_arguments
+assert_success "25. cd state persists into external command execution" test_cd_persists_for_external_command
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

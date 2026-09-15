@@ -1,6 +1,7 @@
 #include "shell.hpp"
 #include "parser.hpp"
 #include "executor.hpp"
+#include "builtin.hpp"
 #include <iostream>
 #include <string>
 #include <unistd.h>
@@ -30,7 +31,15 @@ int Shell::run() {
             continue;
         }
 
-        last_status = execute_command(cmd);
+        if (is_builtin(cmd.name())) {
+            bool should_exit = false;
+            last_status = execute_builtin(cmd, should_exit, last_status);
+            if (should_exit) {
+                break;
+            }
+        } else {
+            last_status = execute_command(cmd);
+        }
     }
 
     return last_status;

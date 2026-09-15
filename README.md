@@ -20,7 +20,7 @@ The project is developed incrementally across distinct phases:
 | :--- | :--- | :--- | :--- |
 | **Phase 0** | Project Setup & Scaffolding | Toolchain, `Makefile`, strict compilation, unit test harness | Completed |
 | **Phase 1** | **Basic Command Execution** | `fork()`, `execvp()`, `waitpid()`, REPL, exit statuses | **Completed** |
-| **Phase 2** | Built-in Commands | In-process execution (`cd`, `pwd`, `exit`, `help`) | Planned |
+| **Phase 2** | **Built-in Commands** | In-process execution (`cd`, `pwd`, `exit`, `help`) | **Completed** |
 | **Phase 3** | I/O Redirection | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | Planned |
 | **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | Planned |
 | **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | Planned |
@@ -41,17 +41,20 @@ mini-unix-shell/
 │   ├── executor.hpp   # Process execution layer (fork, exec, waitpid)
 │   ├── parser.hpp     # Whitespace-based tokenizer interface
 │   ├── shell.hpp      # REPL coordinator and prompt management
+│   ├── builtin.hpp    # Built-in command interface
 │   └── version.hpp    # Version and build metadata
 ├── src/               # Implementation source files
 │   ├── executor.cpp   # POSIX fork/exec/waitpid implementation
 │   ├── main.cpp       # CLI entrypoint and options handling
 │   ├── parser.cpp     # Whitespace tokenizer implementation
-│   └── shell.cpp      # REPL loop implementation
+│   ├── shell.cpp      # REPL loop and built-in dispatch
+│   └── builtin.cpp    # In-process built-in implementations
 ├── tests/             # Automated test scripts and harnesses
 │   └── run_tests.sh   # Phase regression and compliance test runner
 ├── docs/              # In-depth architectural and phase documentation
 │   ├── phase-00-setup.md
-│   └── phase-01-process-execution.md
+│   ├── phase-01-process-execution.md
+│   └── phase-02-builtins.md
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system
@@ -125,6 +128,7 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 1 (Basic Command Execution).
-- **Implemented**: Interactive REPL (`mini-shell$ `), whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit code propagation, EOF handling, and non-interactive input detection.
-- **Next Step**: Phase 2 — Built-in commands (`cd`, `pwd`, `exit`, `help`), executing in-process without forking.
+- **Current Phase**: Phase 2 (Built-in Commands).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, and in-process `cd`, `pwd`, `exit`, and `help` built-ins.
+- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the Phase 1 fork/exec/wait architecture.
+- **Next Step**: Phase 3 — I/O redirection (`<`, `>`, `>>`) using file descriptors.

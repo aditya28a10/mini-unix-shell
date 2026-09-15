@@ -197,3 +197,76 @@ While Phase 0 is primarily scaffolding, here are the low-level POSIX and C libra
 - [x] Immediate termination with `_exit()` if `execvp()` fails (codes 127/126).
 - [x] Synchronous status collection via `waitpid()`.
 - [x] Automated test suite verifying normal commands, exit codes, and error conditions.
+
+---
+
+## Phase 2: Built-in Commands and Process-local State
+
+### 1. Concepts You Should Understand
+
+- **Built-in vs. External Commands**:
+  - External commands are separate programs. The shell creates a child with `fork()`, then the child uses `execvp()` to replace itself with the requested program while the parent waits with `waitpid()`.
+  - Built-ins are shell behavior implemented inside the shell process. They are not necessarily separate executable files.
+- **Why `cd` must run in the shell process**:
+  - The current working directory is process state maintained by the kernel. A child inherits the parent's working directory after `fork()`, but changing the child's directory with `chdir()` does not change the parent's directory.
+  - Therefore `cd` is dispatched before the external-command path and calls `chdir()` directly from the shell process.
+- **Why `exit` must run in the shell process**:
+  - If `exit` were executed only in a child, the child would terminate while the parent shell continued running. The shell itself must decide to stop its REPL and return the requested status.
+- **`pwd` and `getcwd()`**:
+  - `getcwd()` asks the system for the shell process's current working directory. This is preferable to treating the `PWD` environment variable as the authoritative source.
+- **State persistence**:
+  - After `cd /tmp`, the shell remains in `/tmp`; a later external command inherits that working directory when the shell calls `fork()`.
+
+### 2. Important Questions to Ask Yourself
+
+1. Why would `fork(); chdir(...);` fail to implement a useful `cd`?
+2. What process owns the working-directory state before and after `fork()`?
+3. Why can an external `pwd` and the shell's `pwd` both report the same directory?
+4. Why does `exit 42` terminate the shell rather than create a child that exits?
+5. Why does the shell keep a `last_status` value?
+6. What should happen when `cd` receives a nonexistent path?
+7. Why is `getcwd()` a better authority for `pwd` than `$PWD`?
+
+### 3. System Calls / APIs to Know in Phase 2
+
+| API | Category | Purpose |
+| :--- | :--- | :--- |
+| `chdir(2)` | POSIX process state | Changes the calling process's current working directory. |
+| `getcwd(3)` | POSIX/C library | Retrieves the calling process's current working directory. |
+| `getenv(3)` | C library | Reads the `HOME` environment variable for `cd` with no argument. |
+
+### 4. Interview Architecture
+
+```text
+                    Parsed Command
+                          |
+                    is_builtin()?
+                    /           \
+                  yes            no
+                   |              |
+            execute_builtin()  execute_command()
+             (shell process)     |
+              /    |    \        fork()
+             cd   pwd  exit       /    \
+             |     |     |    parent   child
+          chdir  getcwd  break    |       |
+                                waitpid  execvp
+```
+
+The key boundary is that built-ins that affect shell state are handled in-process, while external programs continue through the Phase 1 process-creation path.
+
+### 5. Common Misconceptions
+
+- **"Every command should be forked."** False. Shell built-ins such as `cd` and `exit` need access to the shell process's own state.
+- **"`fork()` gives parent and child independent starting state."** They have independent process state after the fork, but many attributes are inherited initially. The child gets its own process context and later changes do not generally modify the parent's corresponding state.
+- **"`PWD` is the kernel's current directory."** No. `PWD` is an environment variable; `getcwd()` queries the actual current working directory.
+
+### 6. Phase 2 Scope Boundary
+
+Phase 2 intentionally does not implement redirection, pipes, background execution, signals, job control, history, or advanced quoting. Those remain later phases so the process-state and built-in architecture can be understood independently first.
+
+### 7. Deeper OS / COA Connections
+
+- The shell's C++ variables live in its user-space virtual address space, while the process's current working directory is kernel-managed process state.
+- `fork()` creates a new process context with inherited state; `execvp()` later replaces the child process's user-space program image without changing its PID.
+- The distinction between user-space program state and kernel-maintained process state is central to understanding why `cd` cannot be implemented as an ordinary child-only external command.
