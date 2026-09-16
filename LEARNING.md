@@ -270,3 +270,20 @@ Phase 2 intentionally does not implement redirection, pipes, background executio
 - The shell's C++ variables live in its user-space virtual address space, while the process's current working directory is kernel-managed process state.
 - `fork()` creates a new process context with inherited state; `execvp()` later replaces the child process's user-space program image without changing its PID.
 - The distinction between user-space program state and kernel-maintained process state is central to understanding why `cd` cannot be implemented as an ordinary child-only external command.
+
+## Phase 3 — I/O Redirection
+
+### What I learned
+
+A Unix process communicates through file descriptors. The standard descriptors are:
+
+- `0` — standard input (`stdin`)
+- `1` — standard output (`stdout`)
+- `2` — standard error (`stderr`)
+
+A shell can change where these descriptors point before starting a program.
+
+For example:
+
+```bash
+echo hello > output.txt

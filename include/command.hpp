@@ -6,9 +6,21 @@
 
 namespace minishell {
 
-// Represents a parsed shell command with its argument list.
+enum class RedirectionType {
+    Input,
+    Output,
+    Append
+};
+
+struct Redirection {
+    RedirectionType type;
+    std::string filename;
+};
+
+// Represents a parsed shell command.
 struct Command {
     std::vector<std::string> args;
+    std::vector<Redirection> redirections;
 
     bool empty() const {
         return args.empty();

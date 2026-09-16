@@ -21,7 +21,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 0** | Project Setup & Scaffolding | Toolchain, `Makefile`, strict compilation, unit test harness | Completed |
 | **Phase 1** | **Basic Command Execution** | `fork()`, `execvp()`, `waitpid()`, REPL, exit statuses | **Completed** |
 | **Phase 2** | **Built-in Commands** | In-process execution (`cd`, `pwd`, `exit`, `help`) | **Completed** |
-| **Phase 3** | I/O Redirection | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | Planned |
+| **Phase 3** | **I/O Redirection** | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | **Completed** |
 | **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | Planned |
 | **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | Planned |
 | **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | Planned |
@@ -128,7 +128,7 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 2 (Built-in Commands).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, and in-process `cd`, `pwd`, `exit`, and `help` built-ins.
-- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the Phase 1 fork/exec/wait architecture.
-- **Next Step**: Phase 3 — I/O redirection (`<`, `>`, `>>`) using file descriptors.
+- **Current Phase**: Phase 3 (I/O Redirection).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, plus `<`, `>`, and `>>` I/O redirection using POSIX file descriptors.
+- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture, with redirection configured in the child before `execvp()`.
+- **Next Step**: Phase 4 — single-pipe inter-process communication using `pipe()`.

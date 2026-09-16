@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test harness for Mini Unix Shell - Phase 2
+# Test harness for Mini Unix Shell - Phase 3
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 2)         ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 3)         ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,8 +53,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.2.0-phase2"* ]] && \
-    [[ "$v2" == *"mini-shell version 0.2.0-phase2"* ]]
+    [[ "$v1" == *"mini-shell version 0.3.0-phase3"* ]] && \
+[[ "$v2" == *"mini-shell version 0.3.0-phase3"* ]]
 }
 
 test_help_flag() {
@@ -180,7 +180,77 @@ test_cd_persists_for_external_command() {
     output=$(printf "cd $PROJECT_ROOT/docs\n/bin/pwd\n" | ./bin/mini-shell)
     [[ "$output" == "$PROJECT_ROOT/docs" ]]
 }
+# --- Phase 3 Redirection Tests ---
 
+test_output_redirection() {
+    local file="${PROJECT_ROOT}/test-output.txt"
+    rm -f "$file"
+
+    printf "echo hello > %s\n" "$file" | ./bin/mini-shell >/dev/null
+
+    [[ -f "$file" ]] && [[ "$(cat "$file")" == "hello" ]]
+
+    rm -f "$file"
+}
+
+test_output_redirection_truncates() {
+    local file="${PROJECT_ROOT}/test-output.txt"
+    rm -f "$file"
+
+    printf "echo first > %s\necho second > %s\n" "$file" "$file" |
+        ./bin/mini-shell >/dev/null
+
+    [[ "$(cat "$file")" == "second" ]]
+
+    rm -f "$file"
+}
+
+test_append_redirection() {
+    local file="${PROJECT_ROOT}/test-output.txt"
+    rm -f "$file"
+
+    printf "echo first > %s\necho second >> %s\n" "$file" "$file" |
+        ./bin/mini-shell >/dev/null
+
+    expected=$(printf "first\nsecond")
+    [[ "$(cat "$file")" == "$expected" ]]
+
+    rm -f "$file"
+}
+
+test_input_redirection() {
+    local input="${PROJECT_ROOT}/test-input.txt"
+    rm -f "$input"
+
+    printf "hello from input\n" > "$input"
+
+    output=$(printf "cat < %s\n" "$input" | ./bin/mini-shell)
+
+    [[ "$output" == "hello from input" ]]
+
+    rm -f "$input"
+}
+
+test_missing_input_file() {
+    local missing="${PROJECT_ROOT}/does-not-exist.txt"
+    rm -f "$missing"
+
+    local output
+    output=$(printf "cat < %s\n" "$missing" | ./bin/mini-shell 2>&1 || true)
+
+    [[ "$output" == *"mini-shell: input redirection:"* ]]
+}
+
+test_redirection_does_not_pass_operator_to_command() {
+    local file="${PROJECT_ROOT}/test-output.txt"
+    rm -f "$file"
+
+    printf "echo hello > %s\n" "$file" | ./bin/mini-shell >/dev/null
+
+    [[ "$(cat "$file")" == "hello" ]]
+
+    rm -f "$file"
+}
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -213,6 +283,14 @@ assert_success "22. exit terminates with status 0" test_exit_zero
 assert_success "23. exit accepts a custom numeric status" test_exit_custom_status
 assert_success "24. exit rejects too many arguments without terminating" test_exit_too_many_arguments
 assert_success "25. cd state persists into external command execution" test_cd_persists_for_external_command
+
+echo -e "${YELLOW}--- Phase 3 I/O Redirection ---${NC}"
+assert_success "26. Redirect stdout to a file with >" test_output_redirection
+assert_success "27. > truncates an existing file" test_output_redirection_truncates
+assert_success "28. >> appends to an existing file" test_append_redirection
+assert_success "29. Redirect stdin from a file with <" test_input_redirection
+assert_success "30. Report error for missing input file" test_missing_input_file
+assert_success "31. Redirection operators are not passed to the command" test_redirection_does_not_pass_operator_to_command
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

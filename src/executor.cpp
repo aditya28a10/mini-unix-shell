@@ -2,6 +2,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -33,26 +34,78 @@ int execute_command(const Command& cmd) {
     }
 
     if (pid == 0) {
-        // --- Child Process ---
-        // Replace child address space with the target executable.
-        execvp(c_argv[0], c_argv.data());
+    for (const Redirection& redirection : cmd.redirections) {
+        int fd = -1;
 
-        // execvp only returns if an error occurred.
-        std::string err_prefix = "mini-shell: " + cmd.args[0];
-        perror(err_prefix.c_str());
+        if (redirection.type == RedirectionType::Input) {
+            fd = open(redirection.filename.c_str(), O_RDONLY);
 
-        // Terminate child immediately with POSIX exit codes without flushing parent buffers:
-        // 127 = command not found (ENOENT)
-        // 126 = command found but not executable (EACCES)
-        // 1   = general execution error
-        if (errno == ENOENT) {
-            _exit(127);
-        } else if (errno == EACCES) {
-            _exit(126);
-        } else {
-            _exit(1);
+            if (fd == -1) {
+                perror("mini-shell: input redirection");
+                _exit(1);
+            }
+
+            if (dup2(fd, STDIN_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                _exit(1);
+            }
         }
+        else if (redirection.type == RedirectionType::Output) {
+            fd = open(
+                redirection.filename.c_str(),
+                O_WRONLY | O_CREAT | O_TRUNC,
+                0644
+            );
+
+            if (fd == -1) {
+                perror("mini-shell: output redirection");
+                _exit(1);
+            }
+
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                _exit(1);
+            }
+        }
+        else if (redirection.type == RedirectionType::Append) {
+            fd = open(
+                redirection.filename.c_str(),
+                O_WRONLY | O_CREAT | O_APPEND,
+                0644
+            );
+
+            if (fd == -1) {
+                perror("mini-shell: append redirection");
+                _exit(1);
+            }
+
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                _exit(1);
+            }
+        }
+
+        close(fd);
     }
+
+    execvp(c_argv[0], c_argv.data());
+
+    int exec_errno = errno;
+    perror(("mini-shell: " + cmd.args[0]).c_str());
+
+    if (exec_errno == ENOENT) {
+        _exit(127);
+    }
+    else if (exec_errno == EACCES) {
+        _exit(126);
+    }
+    else {
+        _exit(1);
+    }
+}
 
     // --- Parent Process ---
     // Wait synchronously for child process to terminate and collect its exit status.
