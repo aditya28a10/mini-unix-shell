@@ -8,6 +8,7 @@ namespace minishell {
 
 // Parses an input line into a Command by splitting on whitespace.
 Command parse_command(const std::string& line);
+Pipeline parse_pipeline(const std::string& line);
 
 } // namespace minishell
 

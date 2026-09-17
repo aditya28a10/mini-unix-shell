@@ -271,19 +271,597 @@ Phase 2 intentionally does not implement redirection, pipes, background executio
 - `fork()` creates a new process context with inherited state; `execvp()` later replaces the child process's user-space program image without changing its PID.
 - The distinction between user-space program state and kernel-maintained process state is central to understanding why `cd` cannot be implemented as an ordinary child-only external command.
 
-## Phase 3 — I/O Redirection
+# Phase 3 — I/O Redirection
 
-### What I learned
+## What I learned
 
-A Unix process communicates through file descriptors. The standard descriptors are:
+Unix processes normally use three standard file descriptors:
 
-- `0` — standard input (`stdin`)
-- `1` — standard output (`stdout`)
-- `2` — standard error (`stderr`)
+- `stdin` — file descriptor `0`
+- `stdout` — file descriptor `1`
+- `stderr` — file descriptor `2`
 
-A shell can change where these descriptors point before starting a program.
+Normally:
+
+```text
+stdin  → keyboard
+stdout → terminal
+stderr → terminal
+```
+
+I/O redirection changes where these descriptors point.
+
+Examples:
+
+```bash
+echo hello > output.txt
+cat < input.txt
+echo world >> output.txt
+```
+
+The command itself does not need to know whether its output is going to a terminal or a file. It simply writes to `stdout`.
+
+---
+
+## File Descriptors
+
+A file descriptor is a small integer used by a process to refer to an open file or I/O resource.
+
+Important descriptors:
+
+```text
+0 → stdin
+1 → stdout
+2 → stderr
+```
+
+I used system calls such as:
+
+```cpp
+open()
+dup2()
+close()
+```
+
+to implement redirection.
+
+---
+
+## `open()`
+
+`open()` asks the kernel to open a file and returns a file descriptor.
+
+For input:
+
+```cpp
+open(filename, O_RDONLY);
+```
+
+For normal output:
+
+```cpp
+open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+```
+
+For append:
+
+```cpp
+open(filename, O_WRONLY | O_CREAT | O_APPEND, 0644);
+```
+
+Important flags:
+
+```text
+O_RDONLY → read only
+O_WRONLY → write only
+O_CREAT  → create the file if necessary
+O_TRUNC  → remove existing contents
+O_APPEND → write at the end of the file
+```
+
+---
+
+## `dup2()`
+
+The key system call in this phase is:
+
+```cpp
+dup2(oldfd, newfd);
+```
+
+For output redirection:
+
+```cpp
+dup2(fd, STDOUT_FILENO);
+```
+
+Since `STDOUT_FILENO` is `1`, this makes standard output refer to the opened file.
+
+Conceptually:
+
+```text
+Before:
+
+stdout (1) ───→ terminal
+
+
+After dup2():
+
+stdout (1) ───→ output.txt
+```
+
+The program being executed does not need to know that redirection happened.
+
+---
+
+## Why Redirection Happens in the Child
+
+The shell should not permanently redirect its own standard input or output.
+
+Therefore the child performs the redirection before `execvp()`:
+
+```text
+shell
+  |
+  | fork()
+  ↓
+child
+  |
+  | open()
+  | dup2()
+  | close()
+  | execvp()
+  ↓
+command
+```
+
+`execvp()` replaces the child process's program, while the normal open file descriptors remain available to the new program.
+
+Therefore the executed command inherits the redirected `stdin` or `stdout`.
+
+---
+
+## `close()`
+
+After:
+
+```cpp
+dup2(fd, STDOUT_FILENO);
+```
+
+the original `fd` is no longer needed, so it is closed:
+
+```cpp
+close(fd);
+```
+
+Closing unused descriptors prevents descriptor leaks and becomes especially important when implementing pipes.
+
+---
+
+## Redirection Implemented
+
+The shell supports:
+
+```bash
+command < file
+command > file
+command >> file
+```
+
+Meaning:
+
+| Syntax | Effect |
+|---|---|
+| `<` | read standard input from a file |
+| `>` | write standard output to a file, replacing old contents |
+| `>>` | append standard output to a file |
+
+The parser stores redirections separately from normal command arguments, and the executor performs the corresponding file-descriptor operations.
+
+---
+
+## Error Handling
+
+If a redirection file cannot be opened, the child reports the error and does not execute the command.
 
 For example:
 
 ```bash
-echo hello > output.txt
+cat < does-not-exist.txt
+```
+
+should produce an error while keeping the shell usable.
+
+---
+
+## OS Connection
+
+This phase showed me that Unix programs communicate through file descriptors rather than directly depending on a particular input or output device.
+
+The shell can therefore change the environment of a command by changing its file descriptors before execution.
+
+This same mechanism is fundamental to pipes and other Unix process communication.
+
+---
+
+## Phase 3 Limitations
+
+This phase does not implement:
+
+- pipelines
+- background processes
+- signals
+- job control
+- quoting
+- command substitution
+- full shell grammar
+
+These are handled separately in later phases.
+
+---
+
+## Key Takeaway
+
+> Redirection is implemented by opening a file and using `dup2()` to connect the child's standard input or output to that file before `execvp()`.
+
+---
+
+# Phase 4 — Single Pipe
+
+## What I learned
+
+A pipe is a Unix inter-process communication (IPC) mechanism that allows one process to send data to another process.
+
+For example:
+
+```bash
+echo hello | wc -c
+```
+
+Conceptually:
+
+```text
+echo
+  |
+  | stdout
+  ↓
+[ PIPE ]
+  |
+  | stdin
+  ↓
+wc
+```
+
+The shell creates the connection, while the kernel manages the data inside the pipe.
+
+---
+
+## `pipe()`
+
+I used:
+
+```cpp
+int pipe_fds[2];
+
+pipe(pipe_fds);
+```
+
+A successful `pipe()` creates two file descriptors:
+
+```text
+pipe_fds[0] → read end
+pipe_fds[1] → write end
+```
+
+Data written to the write end can be read from the read end.
+
+---
+
+## Connecting Two Processes
+
+For:
+
+```bash
+echo hello | cat
+```
+
+the desired setup is:
+
+```text
+Child 1: echo
+
+stdout ───→ pipe write end
+
+
+Child 2: cat
+
+stdin  ←─── pipe read end
+```
+
+Therefore the pipe connects:
+
+```text
+command 1 stdout
+       ↓
+     pipe
+       ↓
+command 2 stdin
+```
+
+---
+
+## Two Child Processes
+
+A single pipe requires two child processes.
+
+The shell first creates the pipe and then forks two children:
+
+```text
+             Shell
+            /     \
+           /       \
+      Child 1    Child 2
+      command1   command2
+```
+
+The first child writes to the pipe.
+
+The second child reads from the pipe.
+
+---
+
+## First Child
+
+The first command's standard output is connected to the pipe's write end:
+
+```cpp
+dup2(pipe_fds[1], STDOUT_FILENO);
+```
+
+After that, unnecessary pipe descriptors are closed and the command is executed with:
+
+```cpp
+execvp(...)
+```
+
+So:
+
+```text
+command 1 stdout → pipe write end
+```
+
+---
+
+## Second Child
+
+The second command's standard input is connected to the pipe's read end:
+
+```cpp
+dup2(pipe_fds[0], STDIN_FILENO);
+```
+
+The unnecessary descriptors are then closed and the command is executed.
+
+So:
+
+```text
+pipe read end → command 2 stdin
+```
+
+---
+
+## Why Closing Pipe Descriptors Matters
+
+After `dup2()`, each process closes pipe descriptors it does not need.
+
+The intended ownership is:
+
+```text
+Child 1:
+    uses write end
+    closes read end
+
+Child 2:
+    uses read end
+    closes write end
+
+Parent:
+    closes both ends
+```
+
+Closing the unused write ends is particularly important for EOF.
+
+A reader receives EOF only when all write ends referring to the pipe have been closed.
+
+If a process accidentally keeps a write end open, the reader may continue waiting for more data.
+
+---
+
+## `pipe()` + `dup2()`
+
+The main connection between Phase 3 and Phase 4 is:
+
+```text
+Phase 3:
+
+file → stdout/stdin
+
+
+Phase 4:
+
+process 1 → pipe → process 2
+```
+
+Both rely on file descriptors and `dup2()`.
+
+The basic sequence is:
+
+```text
+pipe()
+  ↓
+fork children
+  ↓
+dup2() pipe ends onto stdin/stdout
+  ↓
+close unused descriptors
+  ↓
+execvp()
+  ↓
+waitpid()
+```
+
+---
+
+## Parent Process
+
+After creating both children, the parent closes both pipe descriptors.
+
+The parent then waits for both children using:
+
+```cpp
+waitpid(...)
+```
+
+This keeps the shell synchronized with the foreground pipeline.
+
+The current implementation returns the status of the second command as the pipeline status.
+
+---
+
+## Example
+
+For:
+
+```bash
+echo hello | wc -c
+```
+
+the execution flow is:
+
+```text
+                    Shell
+                      |
+                    pipe()
+                      |
+             ┌────────┴────────┐
+             ↓                 ↓
+          Child 1           Child 2
+            echo               wc
+             |                  ↑
+          stdout             stdin
+             |                  |
+             └──→  PIPE  ──────┘
+```
+
+`echo` writes bytes into the pipe.
+
+`wc` reads those bytes from its standard input.
+
+The shell itself does not manually copy the data from one process to another.
+
+---
+
+## Pipeline Parsing
+
+Phase 4 introduces a `Pipeline` structure containing two commands:
+
+```text
+first command
+second command
+```
+
+For:
+
+```bash
+echo hello | wc -c
+```
+
+the parser separates:
+
+```text
+First:
+echo hello
+
+Second:
+wc -c
+```
+
+The executor then creates the pipe and the two child processes.
+
+---
+
+## Errors
+
+Invalid forms such as:
+
+```bash
+| cat
+echo hello |
+|
+```
+
+are rejected.
+
+If one command does not exist:
+
+```bash
+echo hello | nonexistent
+```
+
+the corresponding child reports the `execvp()` error and the shell remains usable.
+
+---
+
+## Current Limitations
+
+Phase 4 implements only a single pipe:
+
+```bash
+command1 | command2
+```
+
+Multiple pipelines such as:
+
+```bash
+command1 | command2 | command3
+```
+
+are not implemented yet. Multiple pipeline stages are part of Phase 5.
+
+Other features still outside this phase include:
+
+- background execution
+- signals
+- job control
+- quoting
+- command substitution
+- full shell grammar
+- combined pipeline + redirection semantics
+
+The current pipeline executor intentionally does not apply the Phase 3 redirection list inside pipeline commands.
+
+---
+
+## Important OS Concepts
+
+Phase 4 connects:
+
+- inter-process communication (IPC)
+- anonymous pipes
+- file descriptors
+- `fork()`
+- `dup2()`
+- `close()`
+- `execvp()`
+- `waitpid()`
+- EOF behavior
+- parent/child processes
+
+---
+
+## Key Takeaway
+
+> A Unix pipe connects the standard output of one process to the standard input of another process using file descriptors.
+
+The shell creates the processes and connects their descriptors. The kernel manages the actual pipe and the data flowing through it.

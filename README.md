@@ -22,7 +22,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 1** | **Basic Command Execution** | `fork()`, `execvp()`, `waitpid()`, REPL, exit statuses | **Completed** |
 | **Phase 2** | **Built-in Commands** | In-process execution (`cd`, `pwd`, `exit`, `help`) | **Completed** |
 | **Phase 3** | **I/O Redirection** | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | **Completed** |
-| **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | Planned |
+| **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | **Completed** |
 | **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | Planned |
 | **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | Planned |
 | **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGTSTP`, `SIGCHLD`, signal masks | Planned |
@@ -128,7 +128,7 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 3 (I/O Redirection).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, plus `<`, `>`, and `>>` I/O redirection using POSIX file descriptors.
-- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture, with redirection configured in the child before `execvp()`.
-- **Next Step**: Phase 4 — single-pipe inter-process communication using `pipe()`.
+- **Current Phase**: Phase 4 (Single Pipe).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, and single-pipe inter-process communication using `pipe()`.
+- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture, with redirection and pipe descriptor setup performed in child processes before `execvp()`.
+- **Next Step**: Phase 5 — multiple pipelines.

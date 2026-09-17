@@ -6,7 +6,7 @@
 namespace minishell {
 
 constexpr std::string_view SHELL_NAME = "mini-shell";
-constexpr std::string_view SHELL_VERSION = "0.3.0-phase3";
+constexpr std::string_view SHELL_VERSION = "0.4.0-phase4";
 constexpr std::string_view SHELL_DESCRIPTION = "A lightweight Unix shell built for learning OS concepts";
 
 } // namespace minishell

@@ -44,5 +44,23 @@ Command parse_command(const std::string& line) {
 
     return cmd;
 }
+Pipeline parse_pipeline(const std::string& line) {
+    Pipeline pipeline;
+
+    const std::size_t pipe_pos = line.find('|');
+
+    if (pipe_pos == std::string::npos) {
+        pipeline.first = parse_command(line);
+        return pipeline;
+    }
+
+    const std::string first_part = line.substr(0, pipe_pos);
+    const std::string second_part = line.substr(pipe_pos + 1);
+
+    pipeline.first = parse_command(first_part);
+    pipeline.second = parse_command(second_part);
+
+    return pipeline;
+}
 
 } // namespace minishell

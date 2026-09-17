@@ -8,6 +8,7 @@ namespace minishell {
 // Executes an external command using fork(), execvp(), and waitpid().
 // Returns the exit status of the child process, or -1 on system call failure.
 int execute_command(const Command& cmd);
+int execute_pipeline(const Pipeline& pipeline);
 
 } // namespace minishell
 

@@ -26,7 +26,21 @@ int Shell::run() {
             break;
         }
 
+        if (line.find('|') != std::string::npos) {
+            Pipeline pipeline = parse_pipeline(line);
+
+            if (pipeline.first.empty() || pipeline.second.empty()) {
+                std::cerr << "mini-shell: invalid pipe\n";
+                last_status = 2;
+                continue;
+            }
+
+            last_status = execute_pipeline(pipeline);
+            continue;
+        }
+
         Command cmd = parse_command(line);
+
         if (cmd.empty()) {
             continue;
         }
@@ -34,14 +48,15 @@ int Shell::run() {
         if (is_builtin(cmd.name())) {
             bool should_exit = false;
             last_status = execute_builtin(cmd, should_exit, last_status);
+
             if (should_exit) {
-                break;
+                return last_status;
             }
-        } else {
+        }
+        else {
             last_status = execute_command(cmd);
         }
     }
-
     return last_status;
 }
 

@@ -17,7 +17,7 @@ struct Redirection {
     std::string filename;
 };
 
-// Represents a parsed shell command.
+// Represents one parsed shell command.
 struct Command {
     std::vector<std::string> args;
     std::vector<Redirection> redirections;
@@ -29,6 +29,14 @@ struct Command {
     const std::string& name() const {
         return args.front();
     }
+};
+
+// Represents a single pipeline.
+// Phase 4 supports exactly two commands:
+// command1 | command2
+struct Pipeline {
+    Command first;
+    Command second;
 };
 
 } // namespace minishell
