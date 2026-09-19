@@ -31,12 +31,15 @@ struct Command {
     }
 };
 
-// Represents a single pipeline.
-// Phase 4 supports exactly two commands:
-// command1 | command2
+// Represents a pipeline containing one or more commands.
+// Phase 5 supports multiple commands:
+// command1 | command2 | ... | commandN
 struct Pipeline {
-    Command first;
-    Command second;
+    std::vector<Command> commands;
+
+    bool empty() const {
+        return commands.empty();
+    }
 };
 
 } // namespace minishell

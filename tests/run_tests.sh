@@ -53,8 +53,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.4.0-phase4"* ]] && \
-    [[ "$v2" == *"mini-shell version 0.4.0-phase4"* ]]
+    [[ "$v1" == *"mini-shell version 0.5.0-phase5"* ]] && \
+[[ "$v2" == *"mini-shell version 0.5.0-phase5"* ]]
 }
 
 test_help_flag() {
@@ -305,6 +305,34 @@ test_pipe_missing_both_commands() {
     [[ "$output" == *"mini-shell: invalid pipe"* ]]
 }
 
+# --- Phase 5 Multiple Pipelines Tests ---
+
+test_three_command_pipeline() {
+    output=$(printf "echo apple | grep apple | wc -l\n" | ./bin/mini-shell)
+    [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+}
+
+test_four_command_pipeline() {
+    output=$(printf "echo hello | cat | cat | wc -w\n" | ./bin/mini-shell)
+    [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+}
+
+test_multiple_pipeline_arguments() {
+    output=$(printf "echo hello world | wc -w | cat\n" | ./bin/mini-shell)
+    [[ "$output" =~ ^[[:space:]]*2[[:space:]]*$ ]]
+}
+
+test_multiple_pipeline_invalid_middle() {
+    local output
+    output=$(printf "echo hello || wc\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: invalid pipe"* ]]
+}
+
+test_multiple_pipeline_missing_command() {
+    local output
+    output=$(printf "echo hello | | wc\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: invalid pipe"* ]]
+}
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -356,6 +384,13 @@ assert_success "37. Report error when second piped command does not exist" test_
 assert_success "38. Reject pipe with missing left command" test_pipe_missing_left_command
 assert_success "39. Reject pipe with missing right command" test_pipe_missing_right_command
 assert_success "40. Reject pipe with both commands missing" test_pipe_missing_both_commands
+
+echo -e "${YELLOW}--- Phase 5 Multiple Pipelines ---${NC}"
+assert_success "41. Execute a three-command pipeline" test_three_command_pipeline
+assert_success "42. Execute a four-command pipeline" test_four_command_pipeline
+assert_success "43. Preserve arguments across multiple pipeline stages" test_multiple_pipeline_arguments
+assert_success "44. Reject consecutive pipe operators" test_multiple_pipeline_invalid_middle
+assert_success "45. Reject missing middle pipeline command" test_multiple_pipeline_missing_command
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

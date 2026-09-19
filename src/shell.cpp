@@ -27,17 +27,26 @@ int Shell::run() {
         }
 
         if (line.find('|') != std::string::npos) {
-            Pipeline pipeline = parse_pipeline(line);
+    Pipeline pipeline = parse_pipeline(line);
 
-            if (pipeline.first.empty() || pipeline.second.empty()) {
-                std::cerr << "mini-shell: invalid pipe\n";
-                last_status = 2;
-                continue;
-            }
+    bool invalid_pipeline = pipeline.commands.empty();
 
-            last_status = execute_pipeline(pipeline);
-            continue;
+    for (const auto& command : pipeline.commands) {
+        if (command.empty()) {
+            invalid_pipeline = true;
+            break;
         }
+    }
+
+    if (invalid_pipeline) {
+        std::cerr << "mini-shell: invalid pipe\n";
+        last_status = 2;
+        continue;
+    }
+
+    last_status = execute_pipeline(pipeline);
+    continue;
+}
 
         Command cmd = parse_command(line);
 

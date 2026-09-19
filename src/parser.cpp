@@ -47,18 +47,24 @@ Command parse_command(const std::string& line) {
 Pipeline parse_pipeline(const std::string& line) {
     Pipeline pipeline;
 
-    const std::size_t pipe_pos = line.find('|');
+    std::size_t start = 0;
 
-    if (pipe_pos == std::string::npos) {
-        pipeline.first = parse_command(line);
-        return pipeline;
+    while (start <= line.size()) {
+        const std::size_t pipe_pos = line.find('|', start);
+
+        const std::string command_part =
+            line.substr(start, pipe_pos == std::string::npos
+                                    ? std::string::npos
+                                    : pipe_pos - start);
+
+        pipeline.commands.push_back(parse_command(command_part));
+
+        if (pipe_pos == std::string::npos) {
+            break;
+        }
+
+        start = pipe_pos + 1;
     }
-
-    const std::string first_part = line.substr(0, pipe_pos);
-    const std::string second_part = line.substr(pipe_pos + 1);
-
-    pipeline.first = parse_command(first_part);
-    pipeline.second = parse_command(second_part);
 
     return pipeline;
 }

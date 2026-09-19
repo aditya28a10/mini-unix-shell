@@ -865,3 +865,212 @@ Phase 4 connects:
 > A Unix pipe connects the standard output of one process to the standard input of another process using file descriptors.
 
 The shell creates the processes and connects their descriptors. The kernel manages the actual pipe and the data flowing through it.
+
+# Phase 5 — Multiple Pipelines
+
+## What Changed
+
+Phase 4 supported only one pipe:
+
+command1 | command2
+
+Phase 5 supports multiple commands:
+
+command1 | command2 | command3 | ... | commandN
+
+For example:
+
+echo hello | cat | wc -w
+
+---
+
+## 1. N Commands Need N-1 Pipes
+
+The main rule is:
+
+Number of pipes = Number of commands - 1
+
+Examples:
+
+A | B          → 2 commands → 1 pipe
+A | B | C      → 3 commands → 2 pipes
+A | B | C | D  → 4 commands → 3 pipes
+
+Each pipe connects two neighboring processes.
+
+---
+
+## 2. Pipeline Representation
+
+Phase 4 stored exactly two commands:
+
+struct Pipeline {
+    Command first;
+    Command second;
+};
+
+That cannot represent an arbitrary number of commands.
+
+Phase 5 uses:
+
+struct Pipeline {
+    std::vector<Command> commands;
+};
+
+So:
+
+A | B | C
+
+is stored as:
+
+commands[0] = A
+commands[1] = B
+commands[2] = C
+
+---
+
+## 3. Connecting Multiple Processes
+
+Consider:
+
+A | B | C
+
+There are two pipes:
+
+A ── pipe[0] ──> B ── pipe[1] ──> C
+
+For each command:
+
+First command:
+
+stdin  → normal stdin
+stdout → pipe[0]
+
+Middle command:
+
+stdin  → previous pipe
+stdout → next pipe
+
+Last command:
+
+stdin  → previous pipe
+stdout → normal stdout
+
+The implementation uses:
+
+if (i > 0)
+    dup2(pipes[i - 1][0], STDIN_FILENO);
+
+if (i < command_count - 1)
+    dup2(pipes[i][1], STDOUT_FILENO);
+
+---
+
+## 4. Creating Processes
+
+For:
+
+A | B | C | D
+
+the shell creates four child processes.
+
+Each child gets the appropriate pipe connections and then calls:
+
+execvp(...)
+
+The parent closes its pipe descriptors and waits for the children using:
+
+waitpid(...)
+
+---
+
+## 5. Closing File Descriptors
+
+After dup2() connects a pipe to standard input or output, the original pipe descriptors are no longer needed by that process.
+
+They must be closed.
+
+Closing unused pipe descriptors is important because an open write end can prevent a reader from receiving EOF.
+
+---
+
+## 6. Invalid Pipelines
+
+The shell rejects pipelines containing missing commands.
+
+Examples:
+
+echo hello |
+| wc
+echo hello || wc
+echo hello | | wc
+
+These produce:
+
+mini-shell: invalid pipe
+
+The shell then continues running.
+
+---
+
+## 7. Phase 5 vs Phase 4
+
+Phase 4:
+
+A | B
+
+Only one pipe was supported.
+
+Phase 5:
+
+A | B | C
+A | B | C | D
+A | B | C | D | E
+
+The implementation now works with any number of pipeline commands.
+
+The key design is:
+
+N commands → N-1 pipes
+
+---
+
+## Current Limitations
+
+Phase 5 does not yet implement:
+
+- quoting
+- escaping
+- command substitution
+- full shell grammar
+- background execution
+- signal handling
+- job control
+- combined pipeline + redirection semantics
+
+Pipeline commands also do not currently apply the Phase 3 redirection list.
+
+---
+
+## Important OS Concepts
+
+Phase 5 connects:
+
+- Inter-process communication (IPC)
+- Anonymous pipes
+- File descriptors
+- fork()
+- dup2()
+- close()
+- execvp()
+- waitpid()
+- Parent/child processes
+- EOF behavior
+
+---
+
+## Key Takeaway
+
+A pipeline containing N commands requires N-1 pipes.
+
+The shell creates the child processes and connects their file descriptors. The kernel manages the pipes and transfers data between the processes.
