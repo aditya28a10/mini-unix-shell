@@ -1074,3 +1074,187 @@ Phase 5 connects:
 A pipeline containing N commands requires N-1 pipes.
 
 The shell creates the child processes and connects their file descriptors. The kernel manages the pipes and transfers data between the processes.
+
+# Phase 6 — Background Processes
+
+## What Changed
+
+Phase 5 waits for pipeline processes to finish.
+
+Phase 6 allows commands to run in the background using:
+
+sleep 5 &
+
+The shell starts the process and immediately continues instead of waiting.
+
+---
+
+## 1. Foreground vs Background
+
+Foreground:
+
+sleep 5
+
+The parent uses:
+
+waitpid(pid, &status, 0);
+
+This blocks until the child finishes.
+
+Background:
+
+sleep 5 &
+
+The parent does not perform a blocking wait.
+
+The shell immediately continues to the next command.
+
+---
+
+## 2. Background Flag
+
+The Command structure contains:
+
+bool background = false;
+
+When the parser encounters:
+
+&
+
+it sets:
+
+background = true
+
+and does not add & to the command arguments.
+
+Therefore:
+
+echo hello &
+
+executes as:
+
+echo hello
+
+with:
+
+background = true.
+
+---
+
+## 3. Why WNOHANG Is Needed
+
+A background child eventually finishes.
+
+The shell must collect its exit status using waitpid().
+
+For background cleanup the shell uses:
+
+waitpid(-1, &status, WNOHANG);
+
+WNOHANG means the shell does not block while checking for finished children.
+
+If no child has finished, waitpid() returns immediately.
+
+If a child has finished, its PID is returned and the shell reaps it.
+
+---
+
+## 4. Zombie Processes
+
+When a child terminates, the operating system keeps some information about that child until the parent collects its status.
+
+If the parent never calls waitpid(), the terminated child can remain as a zombie.
+
+Phase 6 periodically calls waitpid() with WNOHANG to reap finished background children.
+
+---
+
+## 5. Background Pipelines
+
+A pipeline can also run in the background:
+
+sleep 5 | cat &
+
+The shell starts all pipeline processes and immediately returns to the shell loop.
+
+The pipeline processes are later reaped by the background cleanup logic.
+
+---
+
+## 6. Process Lifecycle
+
+Foreground:
+
+fork()
+  ↓
+child → execvp()
+  ↓
+parent → waitpid()
+  ↓
+command finishes
+
+Background:
+
+fork()
+  ↓
+child → execvp()
+  ↓
+parent continues immediately
+  ↓
+shell continues accepting commands
+  ↓
+later waitpid(..., WNOHANG)
+  ↓
+finished child is reaped
+
+---
+
+## Important OS Concepts
+
+Phase 6 connects:
+
+- Background execution
+- fork()
+- execvp()
+- waitpid()
+- WNOHANG
+- Parent/child relationships
+- Process lifecycle
+- Zombie processes
+- Pipes
+- dup2()
+- File descriptors
+
+---
+
+## Current Limitations
+
+Phase 6 does not yet implement:
+
+- jobs
+- fg
+- bg
+- process groups
+- terminal job control
+- SIGCHLD
+- SIGINT/SIGTSTP handling
+- persistent job tracking
+- full shell grammar
+- quoting and escaping
+- background built-ins
+
+These concepts are addressed in later phases.
+
+---
+
+## Key Takeaway
+
+Background execution means:
+
+fork → exec → parent continues
+
+instead of:
+
+fork → exec → parent blocks waiting
+
+The shell must still reap completed background children so they do not remain as zombies.

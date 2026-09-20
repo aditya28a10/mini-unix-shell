@@ -24,7 +24,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 3** | **I/O Redirection** | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | **Completed** |
 | **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | **Completed** |
 | **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | **Completed** |
-| **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | Planned |
+| **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | **Completed** |
 | **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGTSTP`, `SIGCHLD`, signal masks | Planned |
 | **Phase 8** | Job Control | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | Planned |
 | **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting | Planned |
@@ -128,7 +128,9 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 5 (Multiple Pipelines).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, and single/multiple-pipeline inter-process communication using `pipe()`.
-- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture. Pipelines create `N - 1` pipes for `N` commands, with each child using `dup2()` to connect its input and output to the appropriate pipe ends.
-- **Next Step**: Phase 6 — background execution.
+- **Current Phase**: Phase 6 (Background Execution).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, single/multiple-pipeline inter-process communication using `pipe()`, background command execution using `&`, and non-blocking background-process reaping using `waitpid(..., WNOHANG)`.
+
+- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture. Pipelines create `N - 1` pipes for `N` commands, with each child using `dup2()` to connect its input and output to the appropriate pipe ends. Background commands return immediately without a blocking `waitpid()`, while the shell periodically uses `waitpid(..., WNOHANG)` to reap completed background children and prevent zombies.
+
+- **Next Step**: Phase 7 — signal handling.

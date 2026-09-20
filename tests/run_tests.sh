@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test harness for Mini Unix Shell - Phase 4
+# Test harness for Mini Unix Shell - Phase 6
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 4)         ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 6)         ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,8 +53,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.5.0-phase5"* ]] && \
-[[ "$v2" == *"mini-shell version 0.5.0-phase5"* ]]
+    [[ "$v1" == *"mini-shell version 0.6.0-phase6"* ]] && \
+[[ "$v2" == *"mini-shell version 0.6.0-phase6"* ]]
 }
 
 test_help_flag() {
@@ -333,6 +333,59 @@ test_multiple_pipeline_missing_command() {
     output=$(printf "echo hello | | wc\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: invalid pipe"* ]]
 }
+
+# ============================================================
+# Phase 6 - Background Process Tests
+# ============================================================
+
+test_background_command() {
+    local output
+    output=$(printf "sleep 1 &\necho background-ok\n" | ./bin/mini-shell)
+
+    if [[ "$output" == *"[background] pid"* ]] &&
+       [[ "$output" == *"background-ok"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+test_background_pipeline() {
+    local output
+    output=$(printf "sleep 1 | cat &\necho pipeline-background-ok\n" | ./bin/mini-shell)
+
+    if [[ "$output" == *"[background] pipeline started with pid"* ]] &&
+       [[ "$output" == *"pipeline-background-ok"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+test_background_ampersand_not_passed() {
+    local output
+    output=$(printf "echo ampersand-test &\n" | ./bin/mini-shell)
+
+    if [[ "$output" == *"ampersand-test"* ]] &&
+       [[ "$output" == *"[background] pid"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+test_background_process_reaped() {
+    local output
+    output=$(printf "sleep 1 &\nsleep 2\necho cleanup-ok\n" | ./bin/mini-shell)
+
+    if [[ "$output" == *"[background] process"* ]] &&
+       [[ "$output" == *"cleanup-ok"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -391,6 +444,12 @@ assert_success "42. Execute a four-command pipeline" test_four_command_pipeline
 assert_success "43. Preserve arguments across multiple pipeline stages" test_multiple_pipeline_arguments
 assert_success "44. Reject consecutive pipe operators" test_multiple_pipeline_invalid_middle
 assert_success "45. Reject missing middle pipeline command" test_multiple_pipeline_missing_command
+
+echo -e "${YELLOW}--- Phase 6 Background Processes ---${NC}"
+assert_success "46. Background command returns immediately" test_background_command
+assert_success "47. Background pipeline returns immediately" test_background_pipeline
+assert_success "48. Ampersand is not passed to command" test_background_ampersand_not_passed
+assert_success "49. Finished background process is reaped" test_background_process_reaped
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

@@ -37,6 +37,8 @@ Command parse_command(const std::string& line) {
             }
 
             cmd.redirections.push_back({type, filename});
+        } else if (token == "&") {
+            cmd.background = true;
         } else {
             cmd.args.push_back(token);
         }

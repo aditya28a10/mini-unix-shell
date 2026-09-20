@@ -9,6 +9,7 @@ namespace minishell {
 // Returns the exit status of the child process, or -1 on system call failure.
 int execute_command(const Command& cmd);
 int execute_pipeline(const Pipeline& pipeline);
+void reap_background_processes();
 
 } // namespace minishell
 

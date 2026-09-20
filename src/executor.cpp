@@ -7,10 +7,31 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <vector>
 
 namespace minishell {
 
+void reap_background_processes() {
+    int status = 0;
+
+    while (true) {
+        pid_t pid = waitpid(-1, &status, WNOHANG);
+
+        if (pid > 0) {
+            std::cout << "[background] process " << pid << " finished\n";
+        } else if (pid == 0) {
+            break;
+        } else {
+            if (errno == ECHILD) {
+                break;
+            }
+
+            perror("mini-shell: waitpid");
+            break;
+        }
+    }
+}
 int execute_command(const Command& cmd) {
     if (cmd.empty()) {
         return 0;
@@ -108,8 +129,13 @@ int execute_command(const Command& cmd) {
     }
 }
 
-    // --- Parent Process ---
-    // Wait synchronously for child process to terminate and collect its exit status.
+        // --- Parent Process ---
+    if (cmd.background) {
+        std::cout << "[background] pid " << pid << '\n';
+        return 0;
+    }
+
+    // Foreground process: wait until the child terminates.
     int status = 0;
     pid_t wpid = waitpid(pid, &status, 0);
 
@@ -225,30 +251,38 @@ int execute_pipeline(const Pipeline& pipeline) {
     }
 
     // Parent no longer needs any pipe descriptors.
-    for (const auto& pipe_fds : pipes) {
-        close(pipe_fds[0]);
-        close(pipe_fds[1]);
+for (const auto& pipe_fds : pipes) {
+    close(pipe_fds[0]);
+    close(pipe_fds[1]);
+}
+
+// If the last command has '&', the entire pipeline runs in the background.
+const bool background = pipeline.commands.back().background;
+
+if (background) {
+    std::cout << "[background] pipeline started with pid "
+              << pids.front() << '\n';
+    return 0;
+}
+
+int last_status = 0;
+
+for (std::size_t i = 0; i < pids.size(); ++i) {
+    int status = 0;
+
+    if (waitpid(pids[i], &status, 0) == -1) {
+        perror("mini-shell: waitpid");
+        return -1;
     }
 
-    int last_status = 0;
-
-    for (std::size_t i = 0; i < pids.size(); ++i) {
-        int status = 0;
-
-        if (waitpid(pids[i], &status, 0) == -1) {
-            perror("mini-shell: waitpid");
-            return -1;
-        }
-
-        if (i == pids.size() - 1) {
-            if (WIFEXITED(status)) {
-                last_status = WEXITSTATUS(status);
-            } else if (WIFSIGNALED(status)) {
-                last_status = 128 + WTERMSIG(status);
-            }
+    if (i == pids.size() - 1) {
+        if (WIFEXITED(status)) {
+            last_status = WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status)) {
+            last_status = 128 + WTERMSIG(status);
         }
     }
-
-    return last_status;
+}
+return last_status;
 }
 } // namespace minishell

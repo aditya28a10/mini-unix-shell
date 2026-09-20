@@ -14,7 +14,8 @@ int Shell::run() {
     bool interactive = (isatty(STDIN_FILENO) != 0);
 
     while (true) {
-        if (interactive) {
+    reap_background_processes();
+    if (interactive) {
             std::cout << "mini-shell$ " << std::flush;
         }
 

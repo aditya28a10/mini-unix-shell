@@ -21,7 +21,7 @@ struct Redirection {
 struct Command {
     std::vector<std::string> args;
     std::vector<Redirection> redirections;
-
+    bool background = false;
     bool empty() const {
         return args.empty();
     }
