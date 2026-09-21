@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test harness for Mini Unix Shell - Phase 6
+# Test harness for Mini Unix Shell - Phase 7
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 6)         ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 7)         ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,8 +53,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.6.0-phase6"* ]] && \
-[[ "$v2" == *"mini-shell version 0.6.0-phase6"* ]]
+    [[ "$v1" == *"mini-shell version 0.7.0-phase7"* ]] && \
+[[ "$v2" == *"mini-shell version 0.7.0-phase7"* ]]
 }
 
 test_help_flag() {
@@ -386,6 +386,58 @@ test_background_process_reaped() {
     return 1
 }
 
+# ============================================================
+# Phase 7 - Signal Handling Tests
+# ============================================================
+
+test_sigint_shell_survives() {
+    local fifo
+    local output
+    local shell_pid
+
+    fifo=$(mktemp -u)
+    output=$(mktemp)
+
+    mkfifo "$fifo"
+
+    ./bin/mini-shell < "$fifo" > "$output" 2>&1 &
+    shell_pid=$!
+
+    (
+        sleep 0.1
+        kill -INT "$shell_pid"
+        sleep 0.1
+        printf "echo signal-ok\nexit\n" > "$fifo"
+    ) &
+
+    wait "$shell_pid"
+
+    grep -q "signal-ok" "$output"
+
+    rm -f "$fifo" "$output"
+}
+
+test_sigchld_background_reaping() {
+    local output
+
+    output=$(printf "sleep 1 &\nsleep 2\necho sigchld-ok\n" | ./bin/mini-shell)
+
+    if [[ "$output" == *"[background] process"* ]] &&
+       [[ "$output" == *"sigchld-ok"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+test_sigchld_does_not_break_pipeline() {
+    local output
+
+    output=$(printf "echo signal-pipeline | cat\n" | ./bin/mini-shell)
+
+    [[ "$output" == *"signal-pipeline"* ]]
+}
+
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -450,6 +502,11 @@ assert_success "46. Background command returns immediately" test_background_comm
 assert_success "47. Background pipeline returns immediately" test_background_pipeline
 assert_success "48. Ampersand is not passed to command" test_background_ampersand_not_passed
 assert_success "49. Finished background process is reaped" test_background_process_reaped
+
+echo -e "\n${YELLOW}--- Phase 7 Signal Handling ---${NC}"
+assert_success "50. Shell survives SIGINT at idle prompt" test_sigint_shell_survives
+assert_success "51. SIGCHLD background child is reaped" test_sigchld_background_reaping
+assert_success "52. SIGCHLD does not break foreground pipeline" test_sigchld_does_not_break_pipeline
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

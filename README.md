@@ -25,7 +25,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | **Completed** |
 | **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | **Completed** |
 | **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | **Completed** |
-| **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGTSTP`, `SIGCHLD`, signal masks | Planned |
+| **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGCHLD`, `sig_atomic_t`, `EINTR` | **Completed** |
 | **Phase 8** | Job Control | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | Planned |
 | **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting | Planned |
 | **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage | Planned |
@@ -128,9 +128,9 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 6 (Background Execution).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, single/multiple-pipeline inter-process communication using `pipe()`, background command execution using `&`, and non-blocking background-process reaping using `waitpid(..., WNOHANG)`.
+- **Current Phase**: Phase 7 (signal handling).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, single/multiple-pipeline inter-process communication using `pipe()`, background command execution using `&`, and non-blocking background-process reaping using `waitpid(..., WNOHANG)`, POSIX signal handling using `sigaction()`, `SIGINT` and `SIGCHLD` handling, `sig_atomic_t` signal flags, child `SIGINT` restoration using `SIG_DFL`, and `EINTR` handling for foreground waits.
 
-- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture. Pipelines create `N - 1` pipes for `N` commands, with each child using `dup2()` to connect its input and output to the appropriate pipe ends. Background commands return immediately without a blocking `waitpid()`, while the shell periodically uses `waitpid(..., WNOHANG)` to reap completed background children and prevent zombies.
+- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture. Pipelines create `N - 1` pipes for `N` commands, with each child using `dup2()` to connect its input and output to the appropriate pipe ends. Background commands return immediately without a blocking `waitpid()`, while the shell uses `waitpid(..., WNOHANG)` to reap completed background children and prevent zombies. Signal handlers perform only minimal work by setting `sig_atomic_t` flags; the normal shell loop performs the actual signal handling work. Foreground `waitpid()` calls retry when interrupted with `EINTR`.
 
-- **Next Step**: Phase 7 — signal handling.
+- **Next Step**: Phase 8 — (process groups and terminal job control).
