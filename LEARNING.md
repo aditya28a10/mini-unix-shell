@@ -1615,3 +1615,104 @@ normal shell code checks flag
 shell performs required work
 
 Phase 7 provides the signal-handling foundation required for process groups and full terminal job control in the next phase.
+
+---
+
+# Phase 8 — Job Control
+
+## 1. What is Job Control?
+
+Job Control is a subsystem in Unix shells that allows users to manage multiple distinct programs (or pipelines of programs) running simultaneously, moving them between the foreground (controlling the terminal) and the background (running asynchronously without terminal access), and stopping (suspending) or continuing them at will.
+
+---
+
+## 2. Process Groups and `setpgid()`
+
+### What is a Process Group?
+A Process Group is a collection of one or more processes associated with a common Process Group ID (`PGID`).
+
+In Unix, signals sent from the terminal driver (like Ctrl+C for `SIGINT` or Ctrl+Z for `SIGTSTP`) are delivered not to individual PIDs, but to the entire active **foreground process group**.
+
+### The Role of `setpgid()`
+```cpp
+setpgid(pid, pgid);
+```
+- In `mini-shell`, every command or multi-process pipeline is placed into its own dedicated process group.
+- The first process in a pipeline becomes the **Process Group Leader**, where `PGID == PID`.
+- All subsequent processes in that pipeline join the same process group using `setpgid(child_pid, leader_pgid)`.
+- **Race Condition Prevention**: `setpgid()` is invoked in *both* the child process (before `execvp`) and the parent process immediately after `fork()`. This guarantees the process group is established before either process proceeds.
+
+---
+
+## 3. Terminal Control with `tcsetpgrp()`
+
+```cpp
+tcsetpgrp(STDIN_FILENO, pgid);
+```
+- **Foreground Process Group**: The process group that currently has permission to read from and write to the terminal without restriction.
+- When `mini-shell` launches a foreground job, it gives terminal ownership to the job's `PGID` via `tcsetpgrp()`.
+- When the foreground job finishes or stops, `mini-shell` reclaims terminal ownership by calling `tcsetpgrp(STDIN_FILENO, getpgrp())`.
+- **Why ignore `SIGTTOU` and `SIGTTIN` in the shell?**: If a background process calls `tcsetpgrp()`, the kernel sends `SIGTTOU`. Setting `SIGTTOU` to `SIG_IGN` in the shell prevents the shell from suspending itself during terminal handoffs.
+
+---
+
+## 4. Job Suspension (`SIGTSTP` / Ctrl+Z)
+
+When the user presses Ctrl+Z:
+1. The terminal driver sends `SIGTSTP` to the foreground process group.
+2. The child process stops (is suspended by the kernel).
+3. The parent shell, waiting with `waitpid(-pgid, &status, WUNTRACED)`, detects `WIFSTOPPED(status)`.
+4. The shell restores terminal control to itself.
+5. The shell transitions the job to the `Stopped` state in its job table and outputs `[<job_id>] stopped <command>`.
+
+---
+
+## 5. Built-in Commands: `jobs`, `fg`, `bg`
+
+- **`jobs`**: Iterates through the active job table, reaps completed background jobs, and prints `[<id>] <state> <command>`.
+- **`fg [job_id]`**:
+  1. Finds the job in the job table.
+  2. Hands terminal ownership to the job (`tcsetpgrp`).
+  3. If stopped, sends `SIGCONT` to the entire process group (`kill(-pgid, SIGCONT)`).
+  4. Waits synchronously for the job to complete or stop again.
+  5. Reclaims terminal ownership for the shell.
+- **`bg [job_id]`**:
+  1. Finds the stopped job.
+  2. Sends `SIGCONT` to the process group (`kill(-pgid, SIGCONT)`).
+  3. Marks the job as `Running` in the background.
+
+---
+
+## 6. Pipelines as Single Logical Jobs
+
+For a command such as:
+```bash
+sleep 20 | cat &
+```
+The entire multi-process pipeline represents **one logical job**.
+- All processes in the pipeline share the same `PGID`.
+- Suspending (Ctrl+Z) stops all processes in the pipeline together.
+- Resuming (`fg` or `bg`) continues all processes in the pipeline together.
+
+---
+
+## 7. System Calls to Know in Phase 8
+
+| System Call | Header | Purpose |
+| :--- | :--- | :--- |
+| `setpgid(2)` | `<unistd.h>` | Sets the process group ID of a process. |
+| `tcsetpgrp(3)` | `<unistd.h>` | Sets the foreground process group on a terminal. |
+| `kill(2)` | `<signal.h>` | Sends signals to a PID or process group (`-pgid`). |
+| `waitpid(2)` | `<sys/wait.h>` | Monitors child state changes with `WUNTRACED`, `WNOHANG`, `WCONTINUED`. |
+| `isatty(3)` | `<unistd.h>` | Detects whether standard input is attached to a terminal. |
+
+---
+
+## 8. Interview Questions on Job Control
+
+1. **"Why do we need process groups in a Unix shell?"**
+   - *Key points*: To treat multi-process pipelines (e.g. `cat | grep | wc`) as a single unit for terminal access and signal delivery (Ctrl+C and Ctrl+Z).
+2. **"Why must `setpgid()` be called in both parent and child?"**
+   - *Key points*: To avoid a race condition. If only child calls it, parent might execute `tcsetpgrp()` or `waitpid()` before child sets its group. If only parent calls it, child might `execvp()` before parent sets its group.
+3. **"What happens if a background process tries to read from standard input?"**
+   - *Key points*: The kernel delivers `SIGTTIN` to the background process group, suspending it until the user brings it to the foreground with `fg`.

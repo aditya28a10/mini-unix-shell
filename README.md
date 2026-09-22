@@ -22,11 +22,11 @@ The project is developed incrementally across distinct phases:
 | **Phase 1** | **Basic Command Execution** | `fork()`, `execvp()`, `waitpid()`, REPL, exit statuses | **Completed** |
 | **Phase 2** | **Built-in Commands** | In-process execution (`cd`, `pwd`, `exit`, `help`) | **Completed** |
 | **Phase 3** | **I/O Redirection** | File descriptors, `open()`, `dup2()`, `close()`, stdin/stdout/stderr | **Completed** |
-| **Phase 4** | Single Pipe (`\|`) | Inter-process communication, `pipe()`, descriptor plumbing | **Completed** |
-| **Phase 5** | Multiple Pipelines | Multi-stage pipeline cascades, process chaining, resource cleanup | **Completed** |
-| **Phase 6** | Background Execution (`&`) | Asynchronous jobs, non-blocking reaping, zombie prevention | **Completed** |
-| **Phase 7** | Signal Handling | `sigaction()`, `SIGINT`, `SIGCHLD`, `sig_atomic_t`, `EINTR` | **Completed** |
-| **Phase 8** | Job Control | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | Planned |
+| **Phase 4** | **Single Pipe (`\|`)** | Inter-process communication, `pipe()`, descriptor plumbing | **Completed** |
+| **Phase 5** | **Multiple Pipelines** | Multi-stage pipeline cascades, process chaining, resource cleanup | **Completed** |
+| **Phase 6** | **Background Execution (`&`)** | Asynchronous jobs, non-blocking reaping, zombie prevention | **Completed** |
+| **Phase 7** | **Signal Handling** | `sigaction()`, `SIGINT`, `SIGCHLD`, `sig_atomic_t`, `EINTR` | **Completed** |
+| **Phase 8** | **Job Control** | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | **Completed** |
 | **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting | Planned |
 | **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage | Planned |
 
@@ -37,24 +37,27 @@ The project is developed incrementally across distinct phases:
 ```text
 mini-unix-shell/
 ├── include/           # Header files and interface declarations
-│   ├── command.hpp    # Command data representation
+│   ├── command.hpp    # Command and pipeline data representations
 │   ├── executor.hpp   # Process execution layer (fork, exec, waitpid)
-│   ├── parser.hpp     # Whitespace-based tokenizer interface
+│   ├── parser.hpp     # Whitespace and pipeline tokenizer interface
 │   ├── shell.hpp      # REPL coordinator and prompt management
 │   ├── builtin.hpp    # Built-in command interface
+│   ├── job.hpp        # Job control data structures and JobManager
 │   └── version.hpp    # Version and build metadata
 ├── src/               # Implementation source files
-│   ├── executor.cpp   # POSIX fork/exec/waitpid implementation
+│   ├── executor.cpp   # POSIX fork/exec/waitpid and process groups
 │   ├── main.cpp       # CLI entrypoint and options handling
-│   ├── parser.cpp     # Whitespace tokenizer implementation
-│   ├── shell.cpp      # REPL loop and built-in dispatch
-│   └── builtin.cpp    # In-process built-in implementations
+│   ├── parser.cpp     # Command and pipeline tokenizer implementation
+│   ├── shell.cpp      # REPL loop, signal dispositions, and terminal control
+│   ├── builtin.cpp    # In-process built-in implementations
+│   └── job.cpp        # Job table and process tracking implementation
 ├── tests/             # Automated test scripts and harnesses
 │   └── run_tests.sh   # Phase regression and compliance test runner
 ├── docs/              # In-depth architectural and phase documentation
 │   ├── phase-00-setup.md
 │   ├── phase-01-process-execution.md
-│   └── phase-02-builtins.md
+│   ├── phase-02-builtins.md
+│   └── phase-08-job-control.md
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system
@@ -98,19 +101,21 @@ Launch the shell interactively:
 
 ```text
 $ ./bin/mini-shell
-mini-shell$ ls
-Makefile     README.md    bin          include      src
-LEARNING.md  docs         obj          tests
-mini-shell$ pwd
-/Users/adityapal/Projects/mini-unix-shell
-mini-shell$ echo hello from mini-shell
-hello from mini-shell
-mini-shell$ nonexistent_command
-mini-shell: nonexistent_command: No such file or directory
-mini-shell$
+mini-shell$ sleep 100 &
+[1] 49123
+mini-shell$ jobs
+[1] running sleep 100 &
+mini-shell$ fg 1
+sleep 100 &
+^Z
+[1] stopped sleep 100 &
+mini-shell$ bg 1
+[1] sleep 100 &
+mini-shell$ jobs
+[1] running sleep 100 &
 ```
 
-To exit the shell, press `Ctrl+D` (EOF).
+To exit the shell, press `Ctrl+D` (EOF) or type `exit`.
 
 ---
 
@@ -128,9 +133,6 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 7 (signal handling).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process `cd`, `pwd`, `exit`, and `help` built-ins, `<`, `>`, and `>>` I/O redirection using POSIX file descriptors, single/multiple-pipeline inter-process communication using `pipe()`, background command execution using `&`, and non-blocking background-process reaping using `waitpid(..., WNOHANG)`, POSIX signal handling using `sigaction()`, `SIGINT` and `SIGCHLD` handling, `sig_atomic_t` signal flags, child `SIGINT` restoration using `SIG_DFL`, and `EINTR` handling for foreground waits.
-
-- **Key design point**: Built-ins that modify shell state execute in the shell process; external commands retain the fork/exec/wait architecture. Pipelines create `N - 1` pipes for `N` commands, with each child using `dup2()` to connect its input and output to the appropriate pipe ends. Background commands return immediately without a blocking `waitpid()`, while the shell uses `waitpid(..., WNOHANG)` to reap completed background children and prevent zombies. Signal handlers perform only minimal work by setting `sig_atomic_t` flags; the normal shell loop performs the actual signal handling work. Foreground `waitpid()` calls retry when interrupted with `EINTR`.
-
-- **Next Step**: Phase 8 — (process groups and terminal job control).
+- **Current Phase**: Phase 8 (Job Control).
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process built-ins (`cd`, `pwd`, `exit`, `help`, `jobs`, `fg`, `bg`), `<`, `>`, and `>>` I/O redirection, pipelines via `pipe()`, background command/pipeline execution with `&`, signal handling (`SIGINT`, `SIGCHLD`, `SIGTSTP`, `SIGTTOU`, `SIGTTIN`), process groups via `setpgid()`, terminal control via `tcsetpgrp()`, and full job table management.
+- **Next Step**: Phase 9 — Robustness, Error Handling, and Resource Management.

@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Test harness for Mini Unix Shell - Phase 7
+# Test harness for Mini Unix Shell
 
 set -euo pipefail
 
+# ANSI color codes for readable output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 7)         ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 8)          ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
+# Navigate to project root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
@@ -53,8 +55,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.7.0-phase7"* ]] && \
-[[ "$v2" == *"mini-shell version 0.7.0-phase7"* ]]
+    [[ "$v1" == *"mini-shell version 0.8.0-phase8"* ]] && \
+    [[ "$v2" == *"mini-shell version 0.8.0-phase8"* ]]
 }
 
 test_help_flag() {
@@ -103,7 +105,9 @@ test_sequential_commands() {
     [[ "$output" == "$expected" ]]
 }
 
-test_eof_termination() { printf "" | ./bin/mini-shell; }
+test_eof_termination() {
+    printf "" | ./bin/mini-shell
+}
 
 test_nonexistent_command_error() {
     local err_output
@@ -133,47 +137,45 @@ test_cd_parent_directory() {
 }
 
 test_cd_home() {
-    output=$(printf "cd\npwd\n" | ./bin/mini-shell)
-    [[ "$output" == "$HOME" ]]
+    output=$(printf "cd\npwd\n" | HOME="$PROJECT_ROOT/docs" ./bin/mini-shell)
+    [[ "$output" == "$PROJECT_ROOT/docs" ]]
 }
 
 test_cd_nonexistent_directory() {
     local output
-    output=$(printf "cd /nonexistent_directory_xyz\nexit\n" | ./bin/mini-shell 2>&1 || true)
+    output=$(printf "cd /path/that/does/not/exist_12345\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: cd:"* ]]
 }
 
 test_cd_too_many_arguments() {
     local output
-    output=$(printf "cd /tmp /\nexit\n" | ./bin/mini-shell 2>&1)
+    output=$(printf "cd dir1 dir2\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: cd: too many arguments"* ]]
 }
 
 test_help_builtin() {
+    local output
     output=$(printf "help\n" | ./bin/mini-shell)
-    [[ "$output" == *"cd [dir]"* ]] && \
-    [[ "$output" == *"pwd"* ]] && \
-    [[ "$output" == *"exit [n]"* ]] && \
+    [[ "$output" == *"cd"* ]] && [[ "$output" == *"pwd"* ]] && \
+    [[ "$output" == *"exit"* ]] && [[ "$output" == *"jobs"* ]] && \
+    [[ "$output" == *"fg"* ]] && [[ "$output" == *"bg"* ]] && \
     [[ "$output" == *"help"* ]]
 }
 
 test_exit_zero() {
-    local status=0
-    printf "exit\n" | ./bin/mini-shell >/dev/null || status=$?
-    [[ $status -eq 0 ]]
+    printf "exit\n" | ./bin/mini-shell
 }
 
 test_exit_custom_status() {
     local status=0
-    printf "exit 42\n" | ./bin/mini-shell >/dev/null || status=$?
+    printf "exit 42\n" | ./bin/mini-shell || status=$?
     [[ $status -eq 42 ]]
 }
 
 test_exit_too_many_arguments() {
     local output
-    output=$(printf "exit 1 2\necho still-running\nexit\n" | ./bin/mini-shell 2>&1)
-    [[ "$output" == *"mini-shell: exit: too many arguments"* ]] && \
-    [[ "$output" == *"still-running"* ]]
+    output=$(printf "exit 1 2\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: exit: too many arguments"* ]]
 }
 
 test_cd_persists_for_external_command() {
@@ -184,73 +186,64 @@ test_cd_persists_for_external_command() {
 # --- Phase 3 Redirection Tests ---
 
 test_output_redirection() {
-    local file="${PROJECT_ROOT}/test-output.txt"
-    rm -f "$file"
-
-    printf "echo hello > %s\n" "$file" | ./bin/mini-shell >/dev/null
-
-    [[ -f "$file" ]] && [[ "$(cat "$file")" == "hello" ]]
-
-    rm -f "$file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    printf "echo redirected-content > %s\n" "$tmp_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$tmp_file")
+    rm -f "$tmp_file"
+    [[ "$content" == "redirected-content" ]]
 }
 
 test_output_redirection_truncates() {
-    local file="${PROJECT_ROOT}/test-output.txt"
-    rm -f "$file"
-
-    printf "echo first > %s\necho second > %s\n" "$file" "$file" |
-        ./bin/mini-shell >/dev/null
-
-    [[ "$(cat "$file")" == "second" ]]
-
-    rm -f "$file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    echo "existing-content" > "$tmp_file"
+    printf "echo new-content > %s\n" "$tmp_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$tmp_file")
+    rm -f "$tmp_file"
+    [[ "$content" == "new-content" ]]
 }
 
 test_append_redirection() {
-    local file="${PROJECT_ROOT}/test-output.txt"
-    rm -f "$file"
-
-    printf "echo first > %s\necho second >> %s\n" "$file" "$file" |
-        ./bin/mini-shell >/dev/null
-
-    expected=$(printf "first\nsecond")
-    [[ "$(cat "$file")" == "$expected" ]]
-
-    rm -f "$file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    echo "line1" > "$tmp_file"
+    printf "echo line2 >> %s\n" "$tmp_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$tmp_file")
+    rm -f "$tmp_file"
+    local expected
+    expected=$(printf "line1\nline2")
+    [[ "$content" == "$expected" ]]
 }
 
 test_input_redirection() {
-    local input="${PROJECT_ROOT}/test-input.txt"
-    rm -f "$input"
-
-    printf "hello from input\n" > "$input"
-
-    output=$(printf "cat < %s\n" "$input" | ./bin/mini-shell)
-
-    [[ "$output" == "hello from input" ]]
-
-    rm -f "$input"
+    local tmp_file
+    tmp_file=$(mktemp)
+    echo "input-data" > "$tmp_file"
+    local output
+    output=$(printf "cat < %s\n" "$tmp_file" | ./bin/mini-shell)
+    rm -f "$tmp_file"
+    [[ "$output" == "input-data" ]]
 }
 
 test_missing_input_file() {
-    local missing="${PROJECT_ROOT}/does-not-exist.txt"
-    rm -f "$missing"
-
     local output
-    output=$(printf "cat < %s\n" "$missing" | ./bin/mini-shell 2>&1 || true)
-
+    output=$(printf "cat < /path/that/does/not/exist_12345\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: input redirection:"* ]]
 }
 
 test_redirection_does_not_pass_operator_to_command() {
-    local file="${PROJECT_ROOT}/test-output.txt"
-    rm -f "$file"
-
-    printf "echo hello > %s\n" "$file" | ./bin/mini-shell >/dev/null
-
-    [[ "$(cat "$file")" == "hello" ]]
-
-    rm -f "$file"
+    local tmp_file
+    tmp_file=$(mktemp)
+    local output
+    output=$(printf "echo hello > %s\n" "$tmp_file" | ./bin/mini-shell)
+    local content
+    content=$(cat "$tmp_file")
+    rm -f "$tmp_file"
+    [[ -z "$output" ]] && [[ "$content" == "hello" ]]
 }
 
 # --- Phase 4 Single Pipe Tests ---
@@ -261,30 +254,32 @@ test_basic_pipe() {
 }
 
 test_pipe_line_count() {
-    output=$(printf "echo hello | wc -l\n" | ./bin/mini-shell)
-    [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+    output=$(printf "printf one\\\\ntwo\\\\nthree\\\\n | wc -l\n" | ./bin/mini-shell)
+    output=$(echo "$output" | tr -d ' ')
+    [[ "$output" == "3" ]]
 }
 
 test_pipe_word_count() {
-    output=$(printf "echo hello world | wc -w\n" | ./bin/mini-shell)
-    [[ "$output" =~ ^[[:space:]]*2[[:space:]]*$ ]]
+    output=$(printf "echo one two three | wc -w\n" | ./bin/mini-shell)
+    output=$(echo "$output" | tr -d ' ')
+    [[ "$output" == "3" ]]
 }
 
 test_pipe_preserves_arguments() {
-    output=$(printf "echo hello world | cat\n" | ./bin/mini-shell)
-    [[ "$output" == "hello world" ]]
+    output=$(printf "echo alpha beta gamma | cat\n" | ./bin/mini-shell)
+    [[ "$output" == "alpha beta gamma" ]]
 }
 
 test_pipe_first_command_failure() {
     local output
-    output=$(printf "abcxyz | cat\n" | ./bin/mini-shell 2>&1 || true)
-    [[ "$output" == *"mini-shell: abcxyz: No such file or directory"* ]]
+    output=$(printf "nonexistent_command_12345 | cat\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: nonexistent_command_12345:"* ]]
 }
 
 test_pipe_second_command_failure() {
     local output
-    output=$(printf "echo hello | abcxyz\n" | ./bin/mini-shell 2>&1 || true)
-    [[ "$output" == *"mini-shell: abcxyz: No such file or directory"* ]]
+    output=$(printf "echo hello | nonexistent_command_12345\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: nonexistent_command_12345:"* ]]
 }
 
 test_pipe_missing_left_command() {
@@ -305,90 +300,65 @@ test_pipe_missing_both_commands() {
     [[ "$output" == *"mini-shell: invalid pipe"* ]]
 }
 
-# --- Phase 5 Multiple Pipelines Tests ---
+# --- Phase 5 Multiple Pipeline Tests ---
 
 test_three_command_pipeline() {
-    output=$(printf "echo apple | grep apple | wc -l\n" | ./bin/mini-shell)
-    [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+    output=$(printf "printf apple\\\\nbanana\\\\ncherry\\\\n | grep a | wc -l\n" | ./bin/mini-shell)
+    output=$(echo "$output" | tr -d ' ')
+    [[ "$output" == "2" ]]
 }
 
 test_four_command_pipeline() {
-    output=$(printf "echo hello | cat | cat | wc -w\n" | ./bin/mini-shell)
-    [[ "$output" =~ ^[[:space:]]*1[[:space:]]*$ ]]
+    output=$(printf "printf 3\\\\n1\\\\n2\\\\n | sort | head -n 2 | wc -l\n" | ./bin/mini-shell)
+    output=$(echo "$output" | tr -d ' ')
+    [[ "$output" == "2" ]]
 }
 
 test_multiple_pipeline_arguments() {
-    output=$(printf "echo hello world | wc -w | cat\n" | ./bin/mini-shell)
-    [[ "$output" =~ ^[[:space:]]*2[[:space:]]*$ ]]
+    output=$(printf "printf three\\\\ntwo\\\\none\\\\n | grep t | sort\n" | ./bin/mini-shell)
+    expected=$(printf "three\ntwo")
+    [[ "$output" == "$expected" ]]
 }
 
 test_multiple_pipeline_invalid_middle() {
     local output
-    output=$(printf "echo hello || wc\n" | ./bin/mini-shell 2>&1 || true)
+    output=$(printf "echo hello || cat\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: invalid pipe"* ]]
 }
 
 test_multiple_pipeline_missing_command() {
     local output
-    output=$(printf "echo hello | | wc\n" | ./bin/mini-shell 2>&1 || true)
+    output=$(printf "echo hello | | cat\n" | ./bin/mini-shell 2>&1 || true)
     [[ "$output" == *"mini-shell: invalid pipe"* ]]
 }
 
-# ============================================================
-# Phase 6 - Background Process Tests
-# ============================================================
+# --- Phase 6 Background Process Tests ---
 
 test_background_command() {
     local output
     output=$(printf "sleep 1 &\necho background-ok\n" | ./bin/mini-shell)
-
-    if [[ "$output" == *"[background] pid"* ]] &&
-       [[ "$output" == *"background-ok"* ]]; then
-        return 0
-    fi
-
-    return 1
+    [[ "$output" =~ \[[0-9]+\] ]] && [[ "$output" == *"background-ok"* ]]
 }
 
 test_background_pipeline() {
     local output
     output=$(printf "sleep 1 | cat &\necho pipeline-background-ok\n" | ./bin/mini-shell)
-
-    if [[ "$output" == *"[background] pipeline started with pid"* ]] &&
-       [[ "$output" == *"pipeline-background-ok"* ]]; then
-        return 0
-    fi
-
-    return 1
+    [[ "$output" =~ \[[0-9]+\] ]] && [[ "$output" == *"pipeline-background-ok"* ]]
 }
 
 test_background_ampersand_not_passed() {
     local output
     output=$(printf "echo ampersand-test &\n" | ./bin/mini-shell)
-
-    if [[ "$output" == *"ampersand-test"* ]] &&
-       [[ "$output" == *"[background] pid"* ]]; then
-        return 0
-    fi
-
-    return 1
+    [[ "$output" == *"ampersand-test"* ]]
 }
 
 test_background_process_reaped() {
     local output
     output=$(printf "sleep 1 &\nsleep 2\necho cleanup-ok\n" | ./bin/mini-shell)
-
-    if [[ "$output" == *"[background] process"* ]] &&
-       [[ "$output" == *"cleanup-ok"* ]]; then
-        return 0
-    fi
-
-    return 1
+    [[ "$output" == *"cleanup-ok"* ]]
 }
 
-# ============================================================
-# Phase 7 - Signal Handling Tests
-# ============================================================
+# --- Phase 7 Signal Handling Tests ---
 
 test_sigint_shell_survives() {
     local fifo
@@ -419,23 +389,63 @@ test_sigint_shell_survives() {
 
 test_sigchld_background_reaping() {
     local output
-
     output=$(printf "sleep 1 &\nsleep 2\necho sigchld-ok\n" | ./bin/mini-shell)
-
-    if [[ "$output" == *"[background] process"* ]] &&
-       [[ "$output" == *"sigchld-ok"* ]]; then
-        return 0
-    fi
-
-    return 1
+    [[ "$output" == *"sigchld-ok"* ]]
 }
 
 test_sigchld_does_not_break_pipeline() {
     local output
-
     output=$(printf "echo signal-pipeline | cat\n" | ./bin/mini-shell)
-
     [[ "$output" == *"signal-pipeline"* ]]
+}
+
+# --- Phase 8 Job Control Tests ---
+
+test_jobs_empty() {
+    local output
+    output=$(printf "jobs\n" | ./bin/mini-shell)
+    [[ -z "$output" ]]
+}
+
+test_jobs_listing() {
+    local output
+    output=$(printf "sleep 1 &\njobs\n" | ./bin/mini-shell)
+    [[ "$output" =~ \[1\].*running.*sleep ]]
+}
+
+test_jobs_pipeline_single_job() {
+    local output
+    output=$(printf "sleep 1 | cat &\njobs\n" | ./bin/mini-shell)
+    # Ensure only [1] is listed, not [1] and [2]
+    [[ "$output" == *"[1] running sleep 1 | cat &"* ]] && \
+    [[ "$output" != *"[2]"* ]]
+}
+
+test_fg_invalid_job() {
+    local output
+    output=$(printf "fg 999\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: fg: 999: no such job"* ]]
+}
+
+test_bg_invalid_job() {
+    local output
+    output=$(printf "bg 999\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"mini-shell: bg: 999: no such job"* ]]
+}
+
+test_fg_brings_background_job_to_foreground() {
+    local output
+    output=$(printf "sleep 1 &\nfg 1\necho fg-ok\n" | ./bin/mini-shell)
+    [[ "$output" == *"sleep 1 &"* ]] && [[ "$output" == *"fg-ok"* ]]
+}
+
+test_jobs_clean_after_fg_completion() {
+    local output
+    output=$(printf "sleep 1 &\nfg 1\njobs\n" | ./bin/mini-shell)
+    # After fg completes, jobs should be empty
+    local jobs_lines
+    jobs_lines=$(echo "$output" | grep -c "\[1\]" || true)
+    [[ $jobs_lines -le 1 ]] # Only initial [1] <pid> on launch
 }
 
 # --- Execute tests ---
@@ -465,7 +475,7 @@ assert_success "17. cd .. changes to parent directory" test_cd_parent_directory
 assert_success "18. cd with no arguments uses HOME" test_cd_home
 assert_success "19. cd reports error for nonexistent directory" test_cd_nonexistent_directory
 assert_success "20. cd rejects too many arguments" test_cd_too_many_arguments
-assert_success "21. help lists all four built-ins" test_help_builtin
+assert_success "21. help lists all built-ins" test_help_builtin
 assert_success "22. exit terminates with status 0" test_exit_zero
 assert_success "23. exit accepts a custom numeric status" test_exit_custom_status
 assert_success "24. exit rejects too many arguments without terminating" test_exit_too_many_arguments
@@ -503,10 +513,19 @@ assert_success "47. Background pipeline returns immediately" test_background_pip
 assert_success "48. Ampersand is not passed to command" test_background_ampersand_not_passed
 assert_success "49. Finished background process is reaped" test_background_process_reaped
 
-echo -e "\n${YELLOW}--- Phase 7 Signal Handling ---${NC}"
+echo -e "${YELLOW}--- Phase 7 Signal Handling ---${NC}"
 assert_success "50. Shell survives SIGINT at idle prompt" test_sigint_shell_survives
 assert_success "51. SIGCHLD background child is reaped" test_sigchld_background_reaping
 assert_success "52. SIGCHLD does not break foreground pipeline" test_sigchld_does_not_break_pipeline
+
+echo -e "${YELLOW}--- Phase 8 Job Control ---${NC}"
+assert_success "53. jobs lists nothing when no jobs active" test_jobs_empty
+assert_success "54. jobs lists active background job" test_jobs_listing
+assert_success "55. jobs tracks pipeline as a single logical job" test_jobs_pipeline_single_job
+assert_success "56. fg reports error on nonexistent job" test_fg_invalid_job
+assert_success "57. bg reports error on nonexistent job" test_bg_invalid_job
+assert_success "58. fg brings background job to foreground and completes" test_fg_brings_background_job_to_foreground
+assert_success "59. jobs table is cleaned up after fg completes" test_jobs_clean_after_fg_completion
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

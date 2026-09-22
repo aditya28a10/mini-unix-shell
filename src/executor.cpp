@@ -1,306 +1,382 @@
-#include <csignal>
 #include "executor.hpp"
+#include "job.hpp"
+
 #include <array>
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <fcntl.h>
+#include <iostream>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <cerrno>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
 #include <vector>
 
 namespace minishell {
+
+namespace {
+
+std::string format_command_string(const Command& cmd) {
+    std::string result;
+    for (std::size_t i = 0; i < cmd.args.size(); ++i) {
+        if (i > 0) {
+            result += " ";
+        }
+        result += cmd.args[i];
+    }
+    for (const auto& redirection : cmd.redirections) {
+        result += " ";
+        if (redirection.type == RedirectionType::Input) {
+            result += "< ";
+        } else if (redirection.type == RedirectionType::Output) {
+            result += "> ";
+        } else if (redirection.type == RedirectionType::Append) {
+            result += ">> ";
+        }
+        result += redirection.filename;
+    }
+    if (cmd.background) {
+        result += " &";
+    }
+    return result;
+}
+
+std::string format_pipeline_string(const Pipeline& pipeline) {
+    std::string result;
+    for (std::size_t i = 0; i < pipeline.commands.size(); ++i) {
+        if (i > 0) {
+            result += " | ";
+        }
+        result += format_command_string(pipeline.commands[i]);
+    }
+    return result;
+}
+
+void reset_child_signals() {
+    struct sigaction sa {};
+    sa.sa_handler = SIG_DFL;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTSTP, &sa, nullptr);
+    sigaction(SIGTTIN, &sa, nullptr);
+    sigaction(SIGTTOU, &sa, nullptr);
+    sigaction(SIGQUIT, &sa, nullptr);
+    sigaction(SIGCHLD, &sa, nullptr);
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigprocmask(SIG_SETMASK, &mask, nullptr);
+}
+
+bool apply_redirections(const std::vector<Redirection>& redirections) {
+    for (const auto& redirection : redirections) {
+        int fd = -1;
+
+        if (redirection.type == RedirectionType::Input) {
+            fd = open(redirection.filename.c_str(), O_RDONLY);
+            if (fd == -1) {
+                perror("mini-shell: input redirection");
+                return false;
+            }
+            if (dup2(fd, STDIN_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                return false;
+            }
+        } else if (redirection.type == RedirectionType::Output) {
+            fd = open(redirection.filename.c_str(),
+                      O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (fd == -1) {
+                perror("mini-shell: output redirection");
+                return false;
+            }
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                return false;
+            }
+        } else if (redirection.type == RedirectionType::Append) {
+            fd = open(redirection.filename.c_str(),
+                      O_WRONLY | O_CREAT | O_APPEND, 0644);
+            if (fd == -1) {
+                perror("mini-shell: append redirection");
+                return false;
+            }
+            if (dup2(fd, STDOUT_FILENO) == -1) {
+                perror("mini-shell: dup2");
+                close(fd);
+                return false;
+            }
+        }
+        close(fd);
+    }
+    return true;
+}
+
+} // namespace
+
 void reap_background_processes() {
-	int status = 0;
-
-	while (true) {
-		pid_t pid = waitpid(-1, &status, WNOHANG);
-
-		if (pid > 0) {
-			std::cout << "[background] process " << pid << " finished\n";
-		} else if (pid == 0) {
-			break;
-		} else {
-			if (errno == ECHILD) {
-				break;
-			}
-
-			perror("mini-shell: waitpid");
-			break;
-		}
-	}
+    JobManager::instance().print_job_notifications();
 }
+
+int wait_for_job(Job* job) {
+    if (!job) {
+        return 0;
+    }
+
+    int last_status = 0;
+    pid_t pgid = job->pgid;
+    bool interactive = (isatty(STDIN_FILENO) != 0);
+
+    while (!job->is_completed() && !job->is_stopped()) {
+        int status = 0;
+        pid_t wpid;
+        do {
+            wpid = waitpid(-pgid, &status, WUNTRACED);
+        } while (wpid == -1 && errno == EINTR);
+
+        if (wpid > 0) {
+            JobManager::instance().update_process_status(wpid, status);
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                last_status = 128 + WTERMSIG(status);
+            }
+        } else if (wpid == -1) {
+            if (errno == ECHILD) {
+                break;
+            }
+            break;
+        }
+    }
+
+    if (interactive) {
+        tcsetpgrp(STDIN_FILENO, getpgrp());
+    }
+
+    if (job->is_stopped()) {
+        job->state = JobState::Stopped;
+        job->notified = true;
+        std::cout << "\n[" << job->id << "] stopped " << job->command << "\n";
+        last_status = 128 + SIGTSTP;
+    } else if (job->is_completed()) {
+        job->notified = true;
+        JobManager::instance().cleanup_jobs();
+    }
+
+    return last_status;
+}
+
 int execute_command(const Command& cmd) {
-	if (cmd.empty()) {
-		return 0;
-	}
+    if (cmd.empty()) {
+        return 0;
+    }
 
-	// Convert std::vector<std::string> to null-terminated char* array required by execvp.
-	std::vector<char*> c_argv;
-	c_argv.reserve(cmd.args.size() + 1);
+    std::vector<char*> c_argv;
+    c_argv.reserve(cmd.args.size() + 1);
 
-	for (const auto& arg : cmd.args) {
-		c_argv.push_back(const_cast<char*>(arg.c_str()));
-	}
-	c_argv.push_back(nullptr);
+    for (const auto& arg : cmd.args) {
+        c_argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    c_argv.push_back(nullptr);
 
-	// Create a new child process
-	pid_t pid = fork();
+    bool interactive = (isatty(STDIN_FILENO) != 0);
+    std::string cmd_str = format_command_string(cmd);
 
-	if (pid < 0) {
-		// Fork failure (e.g., resource exhaustion: EAGAIN, ENOMEM)
-		perror("mini-shell: fork");
-		return -1;
-	}
+    pid_t pid = fork();
 
-	if (pid == 0) {
-		struct sigaction sa {};
-		sa.sa_handler = SIG_DFL;
-		sigemptyset(&sa.sa_mask);
-		sa.sa_flags = 0;
+    if (pid < 0) {
+        perror("mini-shell: fork");
+        return -1;
+    }
 
-		if (sigaction(SIGINT, &sa, nullptr) == -1) {
-			perror("mini-shell: sigaction");
-			_exit(1);
-		}
-		for (const Redirection& redirection : cmd.redirections) {
-			int fd = -1;
+    if (pid == 0) {
+        // Child: set process group to its own PID
+        setpgid(0, 0);
 
-			if (redirection.type == RedirectionType::Input) {
-				fd = open(redirection.filename.c_str(), O_RDONLY);
+        if (!cmd.background && interactive) {
+            tcsetpgrp(STDIN_FILENO, getpid());
+        }
 
-				if (fd == -1) {
-					perror("mini-shell: input redirection");
-					_exit(1);
-				}
+        reset_child_signals();
 
-				if (dup2(fd, STDIN_FILENO) == -1) {
-					perror("mini-shell: dup2");
-					close(fd);
-					_exit(1);
-				}
-			}
-			else if (redirection.type == RedirectionType::Output) {
-				fd = open(
-				         redirection.filename.c_str(),
-				         O_WRONLY | O_CREAT | O_TRUNC,
-				         0644
-				     );
+        if (!apply_redirections(cmd.redirections)) {
+            _exit(1);
+        }
 
-				if (fd == -1) {
-					perror("mini-shell: output redirection");
-					_exit(1);
-				}
+        execvp(c_argv[0], c_argv.data());
 
-				if (dup2(fd, STDOUT_FILENO) == -1) {
-					perror("mini-shell: dup2");
-					close(fd);
-					_exit(1);
-				}
-			}
-			else if (redirection.type == RedirectionType::Append) {
-				fd = open(
-				         redirection.filename.c_str(),
-				         O_WRONLY | O_CREAT | O_APPEND,
-				         0644
-				     );
+        int exec_errno = errno;
+        perror(("mini-shell: " + cmd.args[0]).c_str());
 
-				if (fd == -1) {
-					perror("mini-shell: append redirection");
-					_exit(1);
-				}
+        if (exec_errno == ENOENT) {
+            _exit(127);
+        } else if (exec_errno == EACCES) {
+            _exit(126);
+        } else {
+            _exit(1);
+        }
+    }
 
-				if (dup2(fd, STDOUT_FILENO) == -1) {
-					perror("mini-shell: dup2");
-					close(fd);
-					_exit(1);
-				}
-			}
+    // Parent: ensure process group is set
+    setpgid(pid, pid);
 
-			close(fd);
-		}
+    if (!cmd.background && interactive) {
+        tcsetpgrp(STDIN_FILENO, pid);
+    }
 
-		execvp(c_argv[0], c_argv.data());
+    if (cmd.background) {
+        int jid = JobManager::instance().add_job(pid, {pid}, cmd_str, true, JobState::Running);
+        std::cout << "[" << jid << "] " << pid << "\n";
+        return 0;
+    }
 
-		int exec_errno = errno;
-		perror(("mini-shell: " + cmd.args[0]).c_str());
-
-		if (exec_errno == ENOENT) {
-			_exit(127);
-		}
-		else if (exec_errno == EACCES) {
-			_exit(126);
-		}
-		else {
-			_exit(1);
-		}
-	}
-
-	// --- Parent Process ---
-	if (cmd.background) {
-		std::cout << "[background] pid " << pid << '\n';
-		return 0;
-	}
-
-	// Foreground process: wait until the child terminates.
-	int status = 0;
-	pid_t wpid;
-
-	do {
-		wpid = waitpid(pid, &status, 0);
-	} while (wpid == -1 && errno == EINTR);
-
-	if (wpid < 0) {
-		perror("mini-shell: waitpid");
-		return -1;
-	}
-
-	if (WIFEXITED(status)) {
-		return WEXITSTATUS(status);
-	} else if (WIFSIGNALED(status)) {
-		return 128 + WTERMSIG(status);
-	}
-
-	return status;
+    int jid = JobManager::instance().add_job(pid, {pid}, cmd_str, false, JobState::Running);
+    Job* job = JobManager::instance().get_job(jid);
+    return wait_for_job(job);
 }
+
 int execute_pipeline(const Pipeline& pipeline) {
-	if (pipeline.commands.empty()) {
-		return 2;
-	}
+    if (pipeline.commands.empty()) {
+        return 2;
+    }
 
-	const std::size_t command_count = pipeline.commands.size();
+    const std::size_t command_count = pipeline.commands.size();
 
-	if (command_count == 1) {
-		return execute_command(pipeline.commands[0]);
-	}
+    if (command_count == 1) {
+        return execute_command(pipeline.commands[0]);
+    }
 
-	std::vector<std::array<int, 2>> pipes(command_count - 1);
+    std::vector<std::array<int, 2>> pipes(command_count - 1);
 
-	for (std::size_t i = 0; i < pipes.size(); ++i) {
-		if (pipe(pipes[i].data()) == -1) {
-			perror("mini-shell: pipe");
+    for (std::size_t i = 0; i < pipes.size(); ++i) {
+        if (pipe(pipes[i].data()) == -1) {
+            perror("mini-shell: pipe");
+            for (std::size_t j = 0; j < i; ++j) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+            return -1;
+        }
+    }
 
-			for (std::size_t j = 0; j < i; ++j) {
-				close(pipes[j][0]);
-				close(pipes[j][1]);
-			}
+    bool background = pipeline.commands.back().background;
+    bool interactive = (isatty(STDIN_FILENO) != 0);
+    std::string pipe_str = format_pipeline_string(pipeline);
 
-			return -1;
-		}
-	}
+    std::vector<pid_t> pids;
+    pids.reserve(command_count);
+    pid_t pgid = 0;
 
-	std::vector<pid_t> pids;
-	pids.reserve(command_count);
+    for (std::size_t i = 0; i < command_count; ++i) {
+        const Command& cmd = pipeline.commands[i];
 
-	for (std::size_t i = 0; i < command_count; ++i) {
-		const Command& cmd = pipeline.commands[i];
+        std::vector<char*> argv;
+        argv.reserve(cmd.args.size() + 1);
+        for (const auto& arg : cmd.args) {
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        }
+        argv.push_back(nullptr);
 
-		std::vector<char*> argv;
-		argv.reserve(cmd.args.size() + 1);
+        pid_t pid = fork();
 
-		for (const auto& arg : cmd.args) {
-			argv.push_back(const_cast<char*>(arg.c_str()));
-		}
+        if (pid < 0) {
+            perror("mini-shell: fork");
 
-		argv.push_back(nullptr);
+            for (const auto& pipe_fds : pipes) {
+                close(pipe_fds[0]);
+                close(pipe_fds[1]);
+            }
 
-		pid_t pid = fork();
+            for (pid_t child_pid : pids) {
+                waitpid(child_pid, nullptr, 0);
+            }
 
-		if (pid < 0) {
-			perror("mini-shell: fork");
+            return -1;
+        }
 
-			for (const auto& pipe_fds : pipes) {
-				close(pipe_fds[0]);
-				close(pipe_fds[1]);
-			}
+        if (pid == 0) {
+            // Child: set PGID
+            if (i == 0) {
+                setpgid(0, 0);
+            } else {
+                setpgid(0, pgid);
+            }
 
-			for (pid_t child_pid : pids) {
-				waitpid(child_pid, nullptr, 0);
-			}
+            if (!background && interactive) {
+                tcsetpgrp(STDIN_FILENO, (i == 0 ? getpid() : pgid));
+            }
 
-			return -1;
-		}
+            reset_child_signals();
 
-		if (pid == 0) {
-			// Every command except the first reads from the previous pipe.
-			if (i > 0) {
-				if (dup2(pipes[i - 1][0], STDIN_FILENO) == -1) {
-					perror("mini-shell: dup2");
-					_exit(1);
-				}
-			}
+            // Set up pipeline input/output
+            if (i > 0) {
+                if (dup2(pipes[i - 1][0], STDIN_FILENO) == -1) {
+                    perror("mini-shell: dup2");
+                    _exit(1);
+                }
+            }
 
-			// Every command except the last writes to the next pipe.
-			if (i < command_count - 1) {
-				if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
-					perror("mini-shell: dup2");
-					_exit(1);
-				}
-			}
+            if (i < command_count - 1) {
+                if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
+                    perror("mini-shell: dup2");
+                    _exit(1);
+                }
+            }
 
-			// The child no longer needs any original pipe descriptors.
-			for (const auto& pipe_fds : pipes) {
-				close(pipe_fds[0]);
-				close(pipe_fds[1]);
-			}
+            for (const auto& pipe_fds : pipes) {
+                close(pipe_fds[0]);
+                close(pipe_fds[1]);
+            }
 
-			execvp(argv[0], argv.data());
+            if (!apply_redirections(cmd.redirections)) {
+                _exit(1);
+            }
 
-			int exec_errno = errno;
-			perror(("mini-shell: " + cmd.args[0]).c_str());
+            execvp(argv[0], argv.data());
 
-			if (exec_errno == ENOENT) {
-				_exit(127);
-			} else if (exec_errno == EACCES) {
-				_exit(126);
-			} else {
-				_exit(1);
-			}
-		}
+            int exec_errno = errno;
+            perror(("mini-shell: " + cmd.args[0]).c_str());
 
-		pids.push_back(pid);
-	}
+            if (exec_errno == ENOENT) {
+                _exit(127);
+            } else if (exec_errno == EACCES) {
+                _exit(126);
+            } else {
+                _exit(1);
+            }
+        }
 
-	// Parent no longer needs any pipe descriptors.
-	for (const auto& pipe_fds : pipes) {
-		close(pipe_fds[0]);
-		close(pipe_fds[1]);
-	}
+        if (i == 0) {
+            pgid = pid;
+        }
 
-	// If the last command has '&', the entire pipeline runs in the background.
-	const bool background = pipeline.commands.back().background;
+        setpgid(pid, pgid);
 
-	if (background) {
-		std::cout << "[background] pipeline started with pid "
-		          << pids.front() << '\n';
-		return 0;
-	}
+        if (!background && interactive) {
+            tcsetpgrp(STDIN_FILENO, pgid);
+        }
 
-	int last_status = 0;
+        pids.push_back(pid);
+    }
 
-	for (std::size_t i = 0; i < pids.size(); ++i) {
-		int status = 0;
-		pid_t wpid;
+    for (const auto& pipe_fds : pipes) {
+        close(pipe_fds[0]);
+        close(pipe_fds[1]);
+    }
 
-		do {
-			wpid = waitpid(pids[i], &status, 0);
-		} while (wpid == -1 && errno == EINTR);
+    if (background) {
+        int jid = JobManager::instance().add_job(pgid, pids, pipe_str, true, JobState::Running);
+        std::cout << "[" << jid << "] " << pids.front() << "\n";
+        return 0;
+    }
 
-		if (wpid == -1) {
-			perror("mini-shell: waitpid");
-			return -1;
-		}
-
-		if (i == pids.size() - 1) {
-			if (WIFEXITED(status)) {
-				last_status = WEXITSTATUS(status);
-			} else if (WIFSIGNALED(status)) {
-				last_status = 128 + WTERMSIG(status);
-			}
-		}
-	}
-	return last_status;
+    int jid = JobManager::instance().add_job(pgid, pids, pipe_str, false, JobState::Running);
+    Job* job = JobManager::instance().get_job(jid);
+    return wait_for_job(job);
 }
+
 } // namespace minishell
