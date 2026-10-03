@@ -1716,3 +1716,48 @@ The entire multi-process pipeline represents **one logical job**.
    - *Key points*: To avoid a race condition. If only child calls it, parent might execute `tcsetpgrp()` or `waitpid()` before child sets its group. If only parent calls it, child might `execvp()` before parent sets its group.
 3. **"What happens if a background process tries to read from standard input?"**
    - *Key points*: The kernel delivers `SIGTTIN` to the background process group, suspending it until the user brings it to the foreground with `fg`.
+
+---
+
+## Phase 9: Robustness, Error Handling, and Resource Management
+
+### 1. Concepts You Should Understand
+
+- **File Descriptor Hygiene & Leak Prevention**:
+  - File descriptors are kernel-allocated integers per process. Leaking descriptors on failure paths leads to `EMFILE` ("Too many open files").
+  - On pipeline creation failures (`pipe()` or `fork()` errors), all allocated descriptors across previous pipeline stages must be explicitly closed.
+- **Signal-Interrupted System Calls & `EINTR`**:
+  - Slow system calls such as `waitpid()` can be interrupted by signal delivery (e.g. `SIGCHLD`, `SIGINT`).
+  - When interrupted, `waitpid()` returns `-1` with `errno == EINTR`. Robust shells must loop around `waitpid()` as long as `errno == EINTR` rather than aborting foreground waiting prematurely.
+- **Built-in Redirection via `dup()` and `dup2()`**:
+  - Unlike external commands that fork a child, builtins execute within the parent shell process.
+  - To support I/O redirection for builtins (e.g., `pwd > out.txt`), the parent duplicates standard streams (`dup(STDIN_FILENO)`), applies redirection (`dup2`), executes the builtin, and restores the original streams (`dup2(saved_fd, STDIN_FILENO)` / `close(saved_fd)`).
+- **POSIX Exit Code Conventions**:
+  - `0`: Success.
+  - `1`: General runtime errors (redirection failure, `cd` error).
+  - `2`: Syntax errors / builtin usage errors (missing redirection target, malformed pipe syntax, non-numeric `exit`).
+  - `126`: Command invoked cannot execute (`EACCES` / `EISDIR`).
+  - `127`: Command not found (`ENOENT`).
+  - `128 + N`: Terminated by signal $N$.
+
+---
+
+### 2. System Calls to Know in Phase 9
+
+| System Call | Header | Purpose |
+| :--- | :--- | :--- |
+| `dup(2)` | `<unistd.h>` | Duplicates an open file descriptor, returning the lowest available unused descriptor. |
+| `dup2(2)` | `<unistd.h>` | Atomically duplicates `oldfd` onto `newfd`, closing `newfd` first if open. |
+| `_exit(2)` | `<unistd.h>` | Terminates child process immediately without flushing parent user-space buffers. |
+| `strerror(3)` / `perror(3)` | `<string.h>` / `<stdio.h>` | Translates system call `errno` integers into human-readable error descriptions. |
+
+---
+
+### 3. Interview Questions on Shell Robustness
+
+1. **"Why should child processes call `_exit()` instead of `exit()` on execution failure?"**
+   - *Key points*: `exit()` flushes C standard I/O buffers (`FILE*`) and runs `atexit` registered handlers. If the child inherited flushed parent buffers, `exit()` could duplicate buffered output or corrupt shared parent state.
+2. **"How do you ensure zero zombie processes if `fork()` fails halfway through a 5-command pipeline?"**
+   - *Key points*: The parent must close all open pipe file descriptors, iterate through already-forked child PIDs, send `SIGTERM` to each, and call `waitpid()` to reap them before returning error status.
+3. **"Why is `dup2()` preferred over calling `close()` followed by `dup()`?"**
+   - *Key points*: `dup2(oldfd, newfd)` performs the close-and-duplicate operation atomically in the kernel. A separate `close(newfd)` followed by `dup(oldfd)` creates a race window where another thread or asynchronous signal handler could allocate `newfd` in between.

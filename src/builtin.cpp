@@ -36,7 +36,7 @@ int builtin_cd(const Command& cmd) {
     }
 
     if (chdir(target_path) != 0) {
-        perror("mini-shell: cd");
+        perror(("mini-shell: cd: " + (cmd.args.size() > 1 ? cmd.args[1] : std::string(target_path))).c_str());
         return 1;
     }
 

@@ -12,6 +12,9 @@ int execute_command(const Command& cmd);
 // Executes a multi-stage pipeline of commands.
 int execute_pipeline(const Pipeline& pipeline);
 
+// Applies I/O redirections for the current process.
+bool apply_redirections(const std::vector<Redirection>& redirections);
+
 // Waits for a job to complete or stop in the foreground.
 int wait_for_job(Job* job);
 

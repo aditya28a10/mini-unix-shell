@@ -121,6 +121,9 @@ void JobManager::reap_and_update() {
         } else if (pid == 0) {
             break;
         } else {
+            if (errno == EINTR) {
+                continue;
+            }
             if (errno == ECHILD) {
                 break;
             }

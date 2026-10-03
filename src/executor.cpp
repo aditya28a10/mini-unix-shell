@@ -71,8 +71,14 @@ void reset_child_signals() {
     sigprocmask(SIG_SETMASK, &mask, nullptr);
 }
 
+} // namespace
+
 bool apply_redirections(const std::vector<Redirection>& redirections) {
     for (const auto& redirection : redirections) {
+        if (redirection.filename.empty()) {
+            std::cerr << "mini-shell: syntax error near unexpected token 'newline'\n";
+            return false;
+        }
         int fd = -1;
 
         if (redirection.type == RedirectionType::Input) {
@@ -115,8 +121,6 @@ bool apply_redirections(const std::vector<Redirection>& redirections) {
     }
     return true;
 }
-
-} // namespace
 
 void reap_background_processes() {
     JobManager::instance().print_job_notifications();
@@ -214,7 +218,7 @@ int execute_command(const Command& cmd) {
 
         if (exec_errno == ENOENT) {
             _exit(127);
-        } else if (exec_errno == EACCES) {
+        } else if (exec_errno == EACCES || exec_errno == EISDIR) {
             _exit(126);
         } else {
             _exit(1);
@@ -292,7 +296,11 @@ int execute_pipeline(const Pipeline& pipeline) {
             }
 
             for (pid_t child_pid : pids) {
-                waitpid(child_pid, nullptr, 0);
+                kill(child_pid, SIGTERM);
+                pid_t r;
+                do {
+                    r = waitpid(child_pid, nullptr, 0);
+                } while (r == -1 && errno == EINTR);
             }
 
             return -1;
@@ -343,7 +351,7 @@ int execute_pipeline(const Pipeline& pipeline) {
 
             if (exec_errno == ENOENT) {
                 _exit(127);
-            } else if (exec_errno == EACCES) {
+            } else if (exec_errno == EACCES || exec_errno == EISDIR) {
                 _exit(126);
             } else {
                 _exit(1);

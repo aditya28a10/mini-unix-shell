@@ -132,7 +132,38 @@ int Shell::run() {
 
 		if (is_builtin(cmd.name())) {
 			bool should_exit = false;
-			last_status = execute_builtin(cmd, should_exit, last_status);
+			if (!cmd.redirections.empty()) {
+				int saved_stdin = dup(STDIN_FILENO);
+				int saved_stdout = dup(STDOUT_FILENO);
+
+				if (!apply_redirections(cmd.redirections)) {
+					if (saved_stdin != -1) {
+						dup2(saved_stdin, STDIN_FILENO);
+						close(saved_stdin);
+					}
+					if (saved_stdout != -1) {
+						dup2(saved_stdout, STDOUT_FILENO);
+						close(saved_stdout);
+					}
+					last_status = 1;
+					continue;
+				}
+
+				last_status = execute_builtin(cmd, should_exit, last_status);
+				std::cout.flush();
+				std::cerr.flush();
+
+				if (saved_stdin != -1) {
+					dup2(saved_stdin, STDIN_FILENO);
+					close(saved_stdin);
+				}
+				if (saved_stdout != -1) {
+					dup2(saved_stdout, STDOUT_FILENO);
+					close(saved_stdout);
+				}
+			} else {
+				last_status = execute_builtin(cmd, should_exit, last_status);
+			}
 
 			if (should_exit) {
 				return last_status;

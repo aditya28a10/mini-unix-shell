@@ -27,7 +27,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 6** | **Background Execution (`&`)** | Asynchronous jobs, non-blocking reaping, zombie prevention | **Completed** |
 | **Phase 7** | **Signal Handling** | `sigaction()`, `SIGINT`, `SIGCHLD`, `sig_atomic_t`, `EINTR` | **Completed** |
 | **Phase 8** | **Job Control** | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | **Completed** |
-| **Phase 9** | Robustness & Error Handling | Defensive programming, file leak prevention, error reporting | Planned |
+| **Phase 9** | **Robustness & Error Handling** | Defensive programming, file leak prevention, error reporting | **Completed** |
 | **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage | Planned |
 
 ---
@@ -57,7 +57,8 @@ mini-unix-shell/
 │   ├── phase-00-setup.md
 │   ├── phase-01-process-execution.md
 │   ├── phase-02-builtins.md
-│   └── phase-08-job-control.md
+│   ├── phase-08-job-control.md
+│   └── phase-09-robustness-and-error-handling.md
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system

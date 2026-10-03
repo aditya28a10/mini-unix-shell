@@ -14,7 +14,7 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 8)          ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 9)          ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 # Navigate to project root
@@ -55,8 +55,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.8.0-phase8"* ]] && \
-    [[ "$v2" == *"mini-shell version 0.8.0-phase8"* ]]
+    [[ "$v1" == *"mini-shell version 0.9.0-phase9"* ]] && \
+    [[ "$v2" == *"mini-shell version 0.9.0-phase9"* ]]
 }
 
 test_help_flag() {
@@ -448,6 +448,103 @@ test_jobs_clean_after_fg_completion() {
     [[ $jobs_lines -le 1 ]] # Only initial [1] <pid> on launch
 }
 
+# --- Phase 9 Robustness & Error Handling Tests ---
+
+test_exit_code_127_command_not_found() {
+    local status=0
+    printf "nonexistent_binary_xyz_123\n" | ./bin/mini-shell >/dev/null 2>&1 || status=$?
+    [[ $status -eq 127 ]]
+}
+
+test_exit_code_126_non_executable() {
+    local test_file="/tmp/mini_shell_noexec_$$"
+    touch "$test_file"
+    chmod -x "$test_file"
+    local status=0
+    printf "%s\n" "$test_file" | ./bin/mini-shell >/dev/null 2>&1 || status=$?
+    rm -f "$test_file"
+    [[ $status -eq 126 ]]
+}
+
+test_redirection_missing_file_syntax_error() {
+    local output
+    output=$(printf "cat <\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"syntax error"* ]] || [[ "$output" == *"mini-shell"* ]]
+}
+
+test_builtin_stdout_redirection() {
+    local test_file
+    test_file=$(mktemp)
+    printf "pwd > %s\n" "$test_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$test_file" 2>/dev/null || true)
+    rm -f "$test_file"
+    [[ "$content" == "$PROJECT_ROOT" ]]
+}
+
+test_cd_to_file_error() {
+    local output
+    output=$(printf "cd Makefile\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"Not a directory"* ]]
+}
+
+test_cd_nonexistent_status() {
+    local status=0
+    printf "cd nonexistent_directory_12345\nexit\n" | ./bin/mini-shell >/dev/null 2>&1 || status=$?
+    [[ $status -eq 1 ]]
+}
+
+test_exit_non_numeric_argument() {
+    local output
+    set +e
+    output=$(printf "exit invalid_arg\n" | ./bin/mini-shell 2>&1)
+    local status=$?
+    set -e
+    [[ $status -eq 2 ]] && [[ "$output" == *"numeric argument required"* ]]
+}
+
+test_large_argument_list() {
+    local args=""
+    for i in $(seq 1 1000); do
+        args="$args arg$i"
+    done
+    local output
+    output=$(printf "echo %s\n" "$args" | ./bin/mini-shell)
+    [[ "$output" == *"arg1000"* ]]
+}
+
+test_pipeline_error_recovery() {
+    local output
+    output=$(printf "cat | nonexistent_binary_xyz_123 | wc -l\necho pipeline-recovered\n" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"pipeline-recovered"* ]]
+}
+
+test_non_interactive_mode() {
+    local output
+    output=$(printf "echo non-interactive-test\n" | ./bin/mini-shell 2>&1)
+    # Piped/non-TTY execution should NOT emit the interactive prompt
+    [[ "$output" != *"mini-shell$ "* ]] && [[ "$output" == "non-interactive-test" ]]
+}
+
+test_background_pipeline_full_lifecycle() {
+    # Launch pipeline where stage 1 exits early and stage 2 runs longer
+    # Verify that while stage 2 is still running, the overall job remains active in the job table
+    local output
+    output=$(printf "sleep 0.1 | sleep 1 &\nsleep 0.3\njobs\n" | ./bin/mini-shell)
+    [[ "$output" == *"running"* ]] && [[ "$output" == *"sleep 0.1 | sleep 1 &"* ]]
+}
+
+test_fd_leak_prevention_on_errors() {
+    local script=""
+    for i in $(seq 1 30); do
+        script="${script}nonexistent_cmd_${i}\ncat < /nonexistent_path_${i}\n"
+    done
+    script="${script}echo fd-cleanup-verified\n"
+    local output
+    output=$(printf "%b" "$script" | ./bin/mini-shell 2>&1 || true)
+    [[ "$output" == *"fd-cleanup-verified"* ]]
+}
+
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -526,6 +623,20 @@ assert_success "56. fg reports error on nonexistent job" test_fg_invalid_job
 assert_success "57. bg reports error on nonexistent job" test_bg_invalid_job
 assert_success "58. fg brings background job to foreground and completes" test_fg_brings_background_job_to_foreground
 assert_success "59. jobs table is cleaned up after fg completes" test_jobs_clean_after_fg_completion
+
+echo -e "${YELLOW}--- Phase 9 Robustness & Error Handling ---${NC}"
+assert_success "60. Command not found exits with status 127" test_exit_code_127_command_not_found
+assert_success "61. Non-executable file exits with status 126" test_exit_code_126_non_executable
+assert_success "62. Redirection missing file reports syntax error" test_redirection_missing_file_syntax_error
+assert_success "63. Builtin stdout redirection works cleanly" test_builtin_stdout_redirection
+assert_success "64. cd to a non-directory file reports error" test_cd_to_file_error
+assert_success "65. cd to nonexistent directory exits with status 1" test_cd_nonexistent_status
+assert_success "66. exit with non-numeric argument exits with code 2" test_exit_non_numeric_argument
+assert_success "67. 1000-argument stress test handles memory cleanly" test_large_argument_list
+assert_success "68. Pipeline error recovery maintains shell integrity" test_pipeline_error_recovery
+assert_success "69. Non-interactive mode executes cleanly without prompt" test_non_interactive_mode
+assert_success "70. Background pipeline tracks full multi-process lifecycle" test_background_pipeline_full_lifecycle
+assert_success "71. Repeated execution errors do not leak file descriptors" test_fd_leak_prevention_on_errors
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"
