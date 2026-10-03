@@ -1761,3 +1761,39 @@ The entire multi-process pipeline represents **one logical job**.
    - *Key points*: The parent must close all open pipe file descriptors, iterate through already-forked child PIDs, send `SIGTERM` to each, and call `waitpid()` to reap them before returning error status.
 3. **"Why is `dup2()` preferred over calling `close()` followed by `dup()`?"**
    - *Key points*: `dup2(oldfd, newfd)` performs the close-and-duplicate operation atomically in the kernel. A separate `close(newfd)` followed by `dup(oldfd)` creates a race window where another thread or asynchronous signal handler could allocate `newfd` in between.
+
+---
+
+## Phase 10: Testing, Polish, and Architecture Synthesis
+
+### 1. Comprehensive Systems Architecture Review
+
+The implementation of `mini-shell` (v1.0.0) synthesizes key principles across Computer Systems and Operating Systems:
+
+1. **Process Management**:
+   - Every executable invocation branches via `fork()` and transforms via `execvp()`.
+   - Process states transition through Running, Stopped, and Done, tracked cleanly via `waitpid()` status macros (`WIFEXITED`, `WEXITSTATUS`, `WIFSIGNALED`, `WTERMSIG`, `WIFSTOPPED`, `WSTOPSIG`, `WIFCONTINUED`).
+2. **Terminal & Process Group Control**:
+   - Processes are clustered into Process Groups (`PGID`) using `setpgid()`.
+   - The controlling terminal is dynamically assigned to the foreground process group using `tcsetpgrp()`.
+   - The parent shell ignores `SIGTTOU` and `SIGTTIN` to maintain terminal control without stopping itself.
+3. **Pipes & Streams**:
+   - Unidirectional streams (`pipe()`) connect standard output of stage $N$ to standard input of stage $N+1$.
+   - All unused pipe ends are closed across all processes to prevent blocking reads on EOF.
+4. **Asynchronous Signal Handling**:
+   - Real-time signals are caught using `sigaction()`. Handlers only write to `volatile sig_atomic_t` variables.
+   - Non-blocking reaping via `WNOHANG` in user space prevents kernel zombie accumulation.
+5. **Portability & Defensive Engineering**:
+   - Adherence to POSIX.1-2008 guarantees portability across Darwin (macOS) and Linux.
+   - Fail-safe rollback ensures all file descriptors and child processes are cleaned up on error paths.
+
+---
+
+### 2. Capstone Interview Questions
+
+1. **"Explain how modern OS kernels implement pipes under the hood."**
+   - *Key points*: A pipe is a circular ring buffer in kernel memory (typically 64 KB on Linux, 16 KB on macOS) with synchronization locks. Writing blocks if the buffer is full (`PIPE_BUF` atomic writes up to 4 KB); reading blocks if empty. When all write descriptors close, the next read returns EOF (0 bytes). When all read descriptors close, a write raises `SIGPIPE` / returns `EPIPE`.
+2. **"Why do shells require `isatty()` checks?"**
+   - *Key points*: Interactive sessions require user prompts, line editing, and terminal ownership handoffs (`tcsetpgrp()`). Non-interactive streams (scripts, automated testing, redirected files) do not have controlling terminals; calling `tcsetpgrp()` on non-TTY descriptors fails with `ENOTTY` and printing prompts would corrupt automated tool pipelines.
+3. **"What is the lifecycle of a Zombie process, and how does `mini-shell` guarantee none remain?"**
+   - *Key points*: When a process terminates, its memory space is released, but its process table entry and exit status remain in the kernel until its parent calls `wait()` or `waitpid()`. If the parent never waits, the child remains a zombie until adopted by PID 1 (`init`/`launchd`). `mini-shell` ensures zero zombies by reaping synchronously in `wait_for_job()` and asynchronously at every prompt loop via `reap_and_update()` (`waitpid(-1, WNOHANG)`).

@@ -14,7 +14,7 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 echo -e "${BLUE}==================================================${NC}"
-echo -e "${BLUE}  Mini Unix Shell - Test Suite (Phase 9)          ${NC}"
+echo -e "${BLUE}  Mini Unix Shell - Test Suite (v1.0.0)          ${NC}"
 echo -e "${BLUE}==================================================${NC}"
 
 # Navigate to project root
@@ -55,8 +55,8 @@ test_binary_exists() { [[ -x "./bin/mini-shell" ]]; }
 test_version_flag() {
     v1=$(./bin/mini-shell --version)
     v2=$(./bin/mini-shell -v)
-    [[ "$v1" == *"mini-shell version 0.9.0-phase9"* ]] && \
-    [[ "$v2" == *"mini-shell version 0.9.0-phase9"* ]]
+    [[ "$v1" == *"mini-shell version 1.0.0"* ]] && \
+    [[ "$v2" == *"mini-shell version 1.0.0"* ]]
 }
 
 test_help_flag() {
@@ -545,6 +545,88 @@ test_fd_leak_prevention_on_errors() {
     [[ "$output" == *"fd-cleanup-verified"* ]]
 }
 
+# --- Phase 10 Final Polish & Architecture Tests ---
+
+test_pipeline_with_spaces() {
+    local output
+    output=$(printf "   echo   spaces-trimmed   |   cat   \n" | ./bin/mini-shell)
+    [[ "$output" == "spaces-trimmed" ]]
+}
+
+test_multi_args_with_redirection() {
+    local test_file
+    test_file=$(mktemp)
+    printf "echo one two three four > %s\n" "$test_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$test_file")
+    rm -f "$test_file"
+    [[ "$content" == "one two three four" ]]
+}
+
+test_append_multi_lines() {
+    local test_file
+    test_file=$(mktemp)
+    printf "echo alpha > %s\n" "$test_file" | ./bin/mini-shell
+    printf "echo beta >> %s\n" "$test_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$test_file")
+    rm -f "$test_file"
+    local expected
+    expected=$(printf "alpha\nbeta")
+    [[ "$content" == "$expected" ]]
+}
+
+test_pipeline_with_redirections() {
+    local in_file out_file
+    in_file=$(mktemp)
+    out_file=$(mktemp)
+    printf "apple\nbanana\napricot\n" > "$in_file"
+    printf "cat < %s | grep ap > %s\n" "$in_file" "$out_file" | ./bin/mini-shell
+    local content
+    content=$(cat "$out_file")
+    rm -f "$in_file" "$out_file"
+    local expected
+    expected=$(printf "apple\napricot")
+    [[ "$content" == "$expected" ]]
+}
+
+test_multiple_background_jobs_tracked() {
+    local output
+    output=$(printf "sleep 1 &\nsleep 1 &\njobs\n" | ./bin/mini-shell)
+    [[ "$output" == *"[1]"* ]] && [[ "$output" == *"[2]"* ]]
+}
+
+test_fast_sequential_commands() {
+    local script=""
+    for i in $(seq 1 10); do
+        script="${script}echo step_$i\n"
+    done
+    local output
+    output=$(printf "%b" "$script" | ./bin/mini-shell)
+    [[ "$output" == *"step_1"* ]] && [[ "$output" == *"step_10"* ]]
+}
+
+test_custom_exit_status_propagation() {
+    local status=0
+    printf "exit 42\n" | ./bin/mini-shell || status=$?
+    [[ $status -eq 42 ]]
+}
+
+test_spaces_only_input() {
+    local status=0
+    printf "   \t   \n  \n" | ./bin/mini-shell || status=$?
+    [[ $status -eq 0 ]]
+}
+
+test_help_contents_full() {
+    local output
+    output=$(printf "help\n" | ./bin/mini-shell)
+    [[ "$output" == *"cd"* ]] && [[ "$output" == *"pwd"* ]] && \
+    [[ "$output" == *"exit"* ]] && [[ "$output" == *"help"* ]] && \
+    [[ "$output" == *"jobs"* ]] && [[ "$output" == *"fg"* ]] && \
+    [[ "$output" == *"bg"* ]]
+}
+
 # --- Execute tests ---
 
 echo -e "${YELLOW}--- Phase 0 Regressions ---${NC}"
@@ -637,6 +719,17 @@ assert_success "68. Pipeline error recovery maintains shell integrity" test_pipe
 assert_success "69. Non-interactive mode executes cleanly without prompt" test_non_interactive_mode
 assert_success "70. Background pipeline tracks full multi-process lifecycle" test_background_pipeline_full_lifecycle
 assert_success "71. Repeated execution errors do not leak file descriptors" test_fd_leak_prevention_on_errors
+
+echo -e "${YELLOW}--- Phase 10 Final Polish & Architecture ---${NC}"
+assert_success "72. Pipeline handles leading and trailing whitespace" test_pipeline_with_spaces
+assert_success "73. Multiple arguments with output redirection" test_multi_args_with_redirection
+assert_success "74. Multi-line append redirection preserves content" test_append_multi_lines
+assert_success "75. Combined pipeline with input and output redirection" test_pipeline_with_redirections
+assert_success "76. Multiple concurrent background jobs tracked" test_multiple_background_jobs_tracked
+assert_success "77. Fast sequential command execution in order" test_fast_sequential_commands
+assert_success "78. Custom exit status propagated correctly" test_custom_exit_status_propagation
+assert_success "79. Whitespace-only input executes cleanly" test_spaces_only_input
+assert_success "80. Built-in help lists all supported commands" test_help_contents_full
 
 echo -e "${BLUE}==================================================${NC}"
 echo -e "Summary: Passed: ${GREEN}${PASSED_TESTS}${NC} | Failed: ${RED}${FAILED_TESTS}${NC}"

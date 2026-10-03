@@ -12,9 +12,13 @@ void print_help(std::string_view program_name) {
               << "Options:\n"
               << "  -h, --help       Display this help message and exit\n"
               << "  -v, --version    Display version information and exit\n\n"
-              << "Interactive Usage:\n"
-              << "  Run without options to enter the interactive shell prompt.\n"
-              << "  Supports external command execution via fork(), execvp(), and waitpid().\n";
+              << "Features:\n"
+              << "  - External command execution (fork, execvp, waitpid)\n"
+              << "  - Built-in commands: cd, pwd, exit, help, jobs, fg, bg\n"
+              << "  - I/O redirection: <, >, >>\n"
+              << "  - Multi-stage pipelines: |\n"
+              << "  - Background process execution: &\n"
+              << "  - Process group and terminal job control (tcsetpgrp, SIGTSTP, SIGINT, SIGCHLD)\n";
 }
 
 void print_version() {

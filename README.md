@@ -28,7 +28,7 @@ The project is developed incrementally across distinct phases:
 | **Phase 7** | **Signal Handling** | `sigaction()`, `SIGINT`, `SIGCHLD`, `sig_atomic_t`, `EINTR` | **Completed** |
 | **Phase 8** | **Job Control** | Process groups (`setpgid()`), terminal control (`tcsetpgrp()`), `jobs`, `fg`, `bg` | **Completed** |
 | **Phase 9** | **Robustness & Error Handling** | Defensive programming, file leak prevention, error reporting | **Completed** |
-| **Phase 10** | Polish & Comprehensive Test Suite | Automated regression testing, stress testing, edge-case coverage | Planned |
+| **Phase 10** | **Polish & Architecture Docs** | Automated regression testing, stress testing, documentation | **Completed** |
 
 ---
 
@@ -58,7 +58,8 @@ mini-unix-shell/
 │   ├── phase-01-process-execution.md
 │   ├── phase-02-builtins.md
 │   ├── phase-08-job-control.md
-│   └── phase-09-robustness-and-error-handling.md
+│   ├── phase-09-robustness-and-error-handling.md
+│   └── phase-10-testing-and-polish.md
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system
