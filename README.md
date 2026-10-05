@@ -1,6 +1,6 @@
 # Mini Unix Shell (`mini-shell`)
 
-An educational, undergraduate-level Unix shell implemented in C++ on Linux/POSIX. Designed from first principles to explore operating systems and computer architecture concepts: process creation and lifecycle, POSIX execution semantics, file descriptor redirection, pipelines, signal handling, and terminal job control.
+An educational, undergraduate-level Unix shell implemented in C++ using POSIX APIs, developed and tested on macOS and designed to be portable across POSIX systems. Built from first principles to explore operating systems and computer architecture concepts: process creation and lifecycle, POSIX execution semantics, file descriptor redirection, pipelines, signal handling, and terminal job control.
 
 ---
 
@@ -54,12 +54,7 @@ mini-unix-shell/
 ├── tests/             # Automated test scripts and harnesses
 │   └── run_tests.sh   # Phase regression and compliance test runner
 ├── docs/              # In-depth architectural and phase documentation
-│   ├── phase-00-setup.md
-│   ├── phase-01-process-execution.md
-│   ├── phase-02-builtins.md
-│   ├── phase-08-job-control.md
-│   ├── phase-09-robustness-and-error-handling.md
-│   └── phase-10-testing-and-polish.md
+│   └── phase-*.md     # Phase 0–10 architecture and implementation notes
 ├── LEARNING.md        # Conceptual guide, OS questions, and study notes
 ├── README.md          # Public project overview and quickstart
 ├── Makefile           # POSIX build system
@@ -123,7 +118,7 @@ To exit the shell, press `Ctrl+D` (EOF) or type `exit`.
 
 ## Testing
 
-The project maintains an automated test suite located in `tests/`. Each phase introduces test assertions validating functionality, error conditions, and regressions.
+The project includes an automated regression test suite covering major functionality across Phases 0–10, including process execution, built-ins, I/O redirection, pipelines, background jobs, signals, terminal job control, error handling, and resource-management scenarios.
 
 Run the test suite using:
 
@@ -135,6 +130,8 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 10 -  Testing and Polish (v1.0.0).
-- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process built-ins (`cd`, `pwd`, `exit`, `help`, `jobs`, `fg`, `bg`), `<`, `>`, and `>>` I/O redirection, pipelines via `pipe()`, background command/pipeline execution with `&`, signal handling (`SIGINT`, `SIGCHLD`, `SIGTSTP`, `SIGTTOU`, `SIGTTIN`), process groups via `setpgid()`, terminal control via `tcsetpgrp()`, and full job table management.
+- **Current Phase**: Phase 10 — Testing and Polish (v1.0.0).
+- **Status**: All planned Phase 0–10 features are implemented and tested.
+- **Test Suite**: 80/80 tests passing.
+- **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process built-ins (`cd`, `pwd`, `exit`, `help`, `jobs`, `fg`, `bg`), `<`, `>`, and `>>` I/O redirection, single and multi-stage pipelines via `pipe()`, background command/pipeline execution with `&`, signal handling (`SIGINT`, `SIGCHLD`, `SIGTSTP`, `SIGTTOU`, `SIGTTIN`), process groups via `setpgid()`, terminal control via `tcsetpgrp()`, and full job table management.
 - **Next Step**: Maintenance, testing, and future enhancements.
