@@ -135,6 +135,6 @@ make test
 
 ## Current Status & Limitations
 
-- **Current Phase**: Phase 8 (Job Control).
+- **Current Phase**: Phase 10 -  Testing and Polish (v1.0.0).
 - **Implemented**: Interactive REPL, whitespace parsing, `fork()`, `execvp()`, `waitpid()`, exit-status propagation, EOF handling, non-interactive input detection, in-process built-ins (`cd`, `pwd`, `exit`, `help`, `jobs`, `fg`, `bg`), `<`, `>`, and `>>` I/O redirection, pipelines via `pipe()`, background command/pipeline execution with `&`, signal handling (`SIGINT`, `SIGCHLD`, `SIGTSTP`, `SIGTTOU`, `SIGTTIN`), process groups via `setpgid()`, terminal control via `tcsetpgrp()`, and full job table management.
-- **Next Step**: Phase 9 — Robustness, Error Handling, and Resource Management.
+- **Next Step**: Maintenance, testing, and future enhancements.
